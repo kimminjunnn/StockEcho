@@ -65,10 +65,6 @@ export default function HomePage() {
                   <div className="p-lg">
                     <div className="flex justify-between items-center mb-md">
                       <h4 className="font-title-sm text-sm font-bold text-on-surface">분석된 주요 이슈</h4>
-                      <button className="text-primary font-label-caps text-xs flex items-center gap-xs hover:underline">
-                        연관 과거 이슈 보기
-                        <span className="material-symbols-outlined text-[14px]">arrow_forward</span>
-                      </button>
                     </div>
                     <div className="space-y-sm">
                       <div className="bg-surface p-md rounded-xl border border-outline-variant flex justify-between items-center">
@@ -80,6 +76,10 @@ export default function HomePage() {
                           <span className="text-xs text-outline">2024.05.20</span>
                           <span className="text-xs font-bold text-error">High Risk</span>
                         </div>
+                        <button className="text-primary font-label-caps text-[11px] flex items-center gap-xs hover:underline ml-md">
+                          연관 과거 이슈 보기
+                          <span className="material-symbols-outlined text-[14px]">arrow_forward</span>
+                        </button>
                       </div>
                       <div className="bg-surface p-md rounded-xl border border-outline-variant flex justify-between items-center">
                         <div className="flex items-center gap-lg">
@@ -90,6 +90,10 @@ export default function HomePage() {
                           <span className="text-xs text-outline">2024.05.18</span>
                           <span className="text-xs font-bold text-tertiary">Medium</span>
                         </div>
+                        <button className="text-primary font-label-caps text-[11px] flex items-center gap-xs hover:underline ml-md">
+                          연관 과거 이슈 보기
+                          <span className="material-symbols-outlined text-[14px]">arrow_forward</span>
+                        </button>
                       </div>
                       <div className="bg-surface p-md rounded-xl border border-outline-variant flex justify-between items-center">
                         <div className="flex items-center gap-lg">
@@ -100,6 +104,10 @@ export default function HomePage() {
                           <span className="text-xs text-outline">2024.05.15</span>
                           <span className="text-xs font-bold text-tertiary">Medium</span>
                         </div>
+                        <button className="text-primary font-label-caps text-[11px] flex items-center gap-xs hover:underline ml-md">
+                          연관 과거 이슈 보기
+                          <span className="material-symbols-outlined text-[14px]">arrow_forward</span>
+                        </button>
                       </div>
                     </div>
                   </div>
