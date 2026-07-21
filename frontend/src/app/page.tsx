@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from 'react';
+import Link from 'next/link';
 import AddStockModal from '@/components/AddStockModal';
 
 export default function HomePage() {
@@ -49,7 +50,9 @@ export default function HomePage() {
                   <div className="col-span-4 flex items-center gap-md">
                     <div className="h-10 w-10 rounded-lg bg-surface-container-low flex items-center justify-center font-bold text-primary">N</div>
                     <div>
-                      <h3 className="font-title-sm text-md font-bold">NAVER</h3>
+                      <Link href={`/stock/035420`} className="hover:underline">
+                        <h3 className="font-title-sm text-md font-bold">NAVER</h3>
+                      </Link>
                       <span className="text-xs text-outline font-body-sm">035420</span>
                     </div>
                   </div>
@@ -142,7 +145,9 @@ export default function HomePage() {
                   <div className="col-span-4 flex items-center gap-md">
                     <div className="h-10 w-10 rounded-lg bg-secondary-container flex items-center justify-center font-bold text-white">S</div>
                     <div>
-                      <h3 className="font-title-sm text-md font-bold">삼성전자</h3>
+                      <Link href={`/stock/005930`} className="hover:underline">
+                        <h3 className="font-title-sm text-md font-bold">삼성전자</h3>
+                      </Link>
                       <span className="text-xs text-outline font-body-sm">005930</span>
                     </div>
                   </div>

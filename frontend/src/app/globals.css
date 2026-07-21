@@ -1,6 +1,8 @@
 @import "tailwindcss";
 
 @theme {
+  --color-chart-up: #ef4444;
+  --color-chart-down: #3b82f6;
   --color-surface-tint: #005bbe;
   --color-on-secondary: #ffffff;
   --color-on-error: #ffffff;
