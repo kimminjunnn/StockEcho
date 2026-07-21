@@ -255,9 +255,9 @@ export default function HomePage() {
                   </div>
                 </div>
 
-                <button className="w-full bg-on-surface text-white font-title-sm text-sm py-md rounded-2xl hover:bg-on-surface-variant transition-all active:scale-[0.98]">
+                <Link href="/rebalancing" className="w-full bg-on-surface text-white font-title-sm text-sm py-md rounded-2xl hover:bg-on-surface-variant transition-all active:scale-[0.98] flex items-center justify-center text-center">
                   리밸런싱 제안 보기
-                </button>
+                </Link>
               </div>
             </div>
           </div>
