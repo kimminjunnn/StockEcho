@@ -32,7 +32,7 @@ export default function HomePage() {
                 className="bg-primary text-white font-title-sm text-sm px-lg py-md rounded-2xl flex items-center gap-xs hover:bg-primary-container transition-all active:scale-95 shadow-sm"
               >
                 <span className="material-symbols-outlined text-[20px]">add</span>
-                종목 추가하기
+                종목 편집하기
               </button>
             </div>
             
