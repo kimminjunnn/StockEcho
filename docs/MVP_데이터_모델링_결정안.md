@@ -1,520 +1,428 @@
 # StockEcho MVP 데이터 수집·처리·모델링 결정안
 
-> 작성일: 2026-07-21  
-> 범위: KOSPI 대형주 약 10개, 일봉 기반, 공시·뉴스 기반 사건 분석, 포트폴리오 영향 시나리오
+> 작성일: 2026-07-21
+> 상태: MVP 구현 기준
+> 상위 기준: [MVP 백엔드·데이터 수집 아키텍처 결정안](./MVP_백엔드_데이터_수집_아키텍처_결정안.md)
 
-## 0. 먼저 확정할 핵심 원칙
+## 1. 문서 목적
 
-홈 화면을 열 때 브라우저가 KRX·OpenDART·뉴스 API를 직접 호출하지 않는다.
+이 문서는 StockEcho MVP의 데이터 구조, 정규화 규칙, 관련도 판정, 사건 생성, 포트폴리오 계산, 모델 도입 순서를 정의한다.
+
+기술 결정이 충돌하면 상위 아키텍처 결정안을 우선한다.
 
 ```text
-외부 API
-→ 백엔드 수집기(하루 1회 또는 수동 갱신)
-→ Raw snapshot
-→ 검증·정규화·특징 생성
-→ 운영 DB
-→ 홈 화면이 우리 API 호출
+KIS·NAVER API HUB·OpenDART
+→ Lightsail Python 증분 수집기
+→ 정규화·중복 제거·관련도 판정
+→ Supabase PostgreSQL
+→ Next.js DAL 직접 조회
+→ 사용자 포트폴리오 영향 계산
 ```
 
-이렇게 해야 API 키가 노출되지 않고, 외부 API가 느리거나 중단돼도 화면이 열리며, 같은 기준시점의 데이터로 모델 결과를 재현할 수 있다.
+## 2. 데이터 범위
 
-가격의 P0 원천은 **토스증권 Open API**로 변경한다. 토스증권은 현재가, 종목 기본정보, 1분봉·일봉 OHLCV, 국내 시장 캘린더와 시장 지표를 REST API로 제공한다. 현재가는 최대 200종목을 한 번에 조회할 수 있으므로 MVP 10종목은 서버가 한 요청으로 주기 갱신한다. 모델 학습과 Risk Replay는 수정주가가 적용된 일봉을 사용한다.
+### 2.1 지원 범위
 
-토스증권은 현재 WebSocket을 제공하지 않으므로 진짜 체결 이벤트 스트리밍이 아니라 서버가 현재가 REST API를 5~10초 간격으로 폴링하는 **준실시간 표시**로 구현한다. 폴링 장애 시 마지막으로 저장한 일봉 종가로 대체한다.
+- KOSPI 인기 대형주 20개
+- 사용자는 지원 종목 중 1~5개 선택
+- 포트폴리오 비중 합계 100%
+- 로그인 없이 `localStorage` 사용
+- 사용자 포트폴리오는 MVP 서버 DB에 저장하지 않음
 
-- [토스증권 Open API 공식 가이드](https://developers.tossinvest.com/docs)
-- [토스증권 Open API 공식 명세](https://openapi.tossinvest.com/openapi-docs/latest/openapi.json)
-- [KRX OPEN API 서비스 목록](https://openapi.krx.co.kr/contents/OPP/INFO/service/OPPINFO004.cmd) — 선택적 검증·fallback
+지원 종목과 Tier는 `companies` 테이블에서 관리한다. 목록은 상위 아키텍처 결정안을 따른다.
 
----
+### 2.2 데이터 원천
 
-## 1. 주식 데이터
+| 데이터 | 원천 | 운영 저장 |
+|---|---|---|
+| 현재가 | KIS Open API | 영구 저장하지 않고 5~10초 메모리 캐시 |
+| 일봉 OHLCV | KIS Open API | PostgreSQL |
+| 뉴스 | NAVER API HUB | 제목·요약·링크·발행시각·검색 근거 |
+| 공시 | OpenDART | 공시 메타데이터·원문 링크 |
+| Raw 응답 | 각 외부 API | 변경·신규·오류 시 Private Storage에 gzip 저장 |
 
-### 1.1 어디서 받아오는가
+언론사 본문 HTML은 MVP 기본 수집 대상이 아니다.
 
-P0 데이터 소스는 토스증권 Open API의 다음 세 종류로 정한다.
+## 3. 데이터 생명주기
 
-1. `GET /api/v1/stocks`: 종목명, 시장, 통화, 상장·거래정지 상태
-2. `GET /api/v1/prices`: 현재가와 기준시각, 최대 200종목 다건 조회
-3. `GET /api/v1/candles`: 1분봉·일봉 OHLCV, 최대 200개 봉씩 페이지네이션
+```text
+API 응답
+→ Raw payload hash 비교
+→ 필드 검증
+→ 텍스트·URL·시각 정규화
+→ 기사 중복 제거
+→ 기사-검색어 연결
+→ 기사-종목 관련도 판정
+→ 키워드 후보 계산
+→ 정제 테이블 upsert
+→ Next.js 조회
+```
 
-가격 데이터의 이상 여부를 확인할 때만 KRX 일별매매정보 또는 로컬 CSV snapshot을 보조 원천으로 사용한다.
+모든 단계는 같은 입력을 반복 처리해도 결과가 중복되지 않아야 한다.
 
-### 1.2 언제 받아오는가
+### 3.1 Raw 보관
 
-- 최초 적재: 토스 캔들 API 페이지네이션으로 선정한 10개 종목의 최근 2년 이상 수정 일봉 수집
-- 정기 갱신: 장 마감 이후 하루 1회
-- 장중 현재가: 서버가 10개 종목을 묶어 5~10초 간격으로 REST 폴링
-- 수동 갱신: 관리자용 `/admin/refresh`
-- 홈 화면 진입: 외부 API를 호출하지 않고 우리 DB의 마지막 정상 데이터 조회
+- `collection_runs`는 실행할 때마다 기록한다.
+- Raw payload는 이전 hash와 다르거나 신규 데이터·오류가 있을 때 저장한다.
+- Raw 기본 보관 기간은 14일이다.
+- 자동 품질 평가 결과, 학습 데이터셋, 오류 재현 자료는 별도 prefix에 장기 보관한다.
 
-### 1.3 저장 형식
+```text
+raw/news/<source>/2026-07-21/<query_id>/153250_<hash>.json.gz
+datasets/news-relevance/v1/train.parquet
+models/news-relevance/v1/<artifact>
+```
 
-#### Company
+## 4. 핵심 데이터 모델
+
+### 4.1 companies
+
+| 필드 | 타입 | 설명 |
+|---|---|---|
+| `id` | uuid | 내부 PK |
+| `stock_code` | text unique | 6자리 종목 코드 |
+| `corp_code` | text unique nullable | OpenDART 고유번호 |
+| `name` | text | 정식 회사명 |
+| `market` | text | `KOSPI` |
+| `sector` | text nullable | 업종 힌트 |
+| `is_supported` | boolean | 서비스 지원 여부 |
+| `collection_tier` | text | `A` 또는 `B` |
+| `activated_at` | timestamptz | 수집 활성화 시각 |
+
+업종은 세부 사업 키워드의 정답이 아니라 약한 prior로만 사용한다.
+
+### 4.2 market_daily
+
+| 필드 | 타입 | 설명 |
+|---|---|---|
+| `company_id` | uuid | 회사 FK |
+| `trading_date` | date | 실제 거래일 |
+| `open` | numeric | 시가 |
+| `high` | numeric | 고가 |
+| `low` | numeric | 저가 |
+| `close` | numeric | 종가 |
+| `volume` | bigint | 거래량 |
+| `adjusted` | boolean | 수정주가 여부 |
+| `source` | text | `KIS` |
+| `collected_at` | timestamptz | 수집 시각 |
+
+PK는 `(company_id, trading_date)`로 한다. 휴장일 행은 만들지 않는다.
+
+### 4.3 news_articles
+
+| 필드 | 타입 | 설명 |
+|---|---|---|
+| `id` | uuid | 내부 PK |
+| `source` | text | `NAVER_NEWS_SEARCH` |
+| `source_id` | text nullable | 원천 식별자 |
+| `title` | text | 태그 제거 제목 |
+| `summary` | text | 태그 제거 요약 |
+| `canonical_url` | text unique | 정규화 원문 URL |
+| `source_url` | text nullable | 수집 소스가 제공한 링크 |
+| `published_at` | timestamptz | 발행시각 UTC 저장 |
+| `content_hash` | text | 정규화 콘텐츠 hash |
+| `collected_at` | timestamptz | 최초 수집시각 |
+| `updated_at` | timestamptz | 마지막 갱신시각 |
+
+`canonical_url`을 우선 중복 기준으로 사용하고 URL이 불안정할 때 `content_hash`를 보조 기준으로 사용한다.
+
+### 4.4 article_companies
+
+| 필드 | 타입 | 설명 |
+|---|---|---|
+| `article_id` | uuid | 기사 FK |
+| `company_id` | uuid | 회사 FK |
+| `relation_type` | text | `direct`, `product`, `industry` |
+| `confidence` | numeric | 0~1 관련도 |
+| `evidence` | jsonb | 판정 근거 |
+| `rule_version` | text | 판정 규칙 버전 |
+
+PK는 `(article_id, company_id)`다. 관련도 판정 근거가 없는 연결은 저장하지 않는다.
+
+### 4.5 search_queries와 query_companies
+
+`search_queries`는 뉴스 source adapter가 실행하는 검색 단위다. NAVER는 현재 연결된 첫 adapter다.
+
+| 필드 | 설명 |
+|---|---|
+| `query` | 정규화 검색어, unique |
+| `query_type` | `company`, `product`, `industry`, `event` |
+| `status` | `active`, `paused`, `expired` |
+| `last_seen_published_at` | 증분 수집 checkpoint |
+| `last_collected_at` | 마지막 실행 시각 |
+
+`query_companies`는 검색어와 영향 종목의 다대다 관계를 저장한다.
+
+| 필드 | 설명 |
+|---|---|
+| `query_id` | 검색어 FK |
+| `company_id` | 회사 FK |
+| `weight` | 연결 강도 |
+| `evidence` | 연결 근거 |
+
+발견 초기에는 `삼성전자 HBM`처럼 회사 문맥을 포함해 정밀도를 우선한다. 동일 산업어가 여러 회사에서 검증되면 공용 `HBM` 검색으로 승격하고 한 번 수집한 기사를 여러 회사에 연결한다.
+
+### 4.6 article_queries
+
+기사가 어떤 검색으로 들어왔는지 보존한다.
+
+```text
+PK: (article_id, query_id)
+fields: rank, collected_at
+```
+
+### 4.7 keyword_candidates
+
+| 필드 | 설명 |
+|---|---|
+| `company_id` | 대상 회사 |
+| `keyword` | 후보 키워드 |
+| `score` | 종합 점수 |
+| `document_count` | 등장 기사 수 |
+| `source_count` | 서로 다른 출처 수 |
+| `title_count` | 제목 등장 수 |
+| `status` | `candidate`, `active`, `expired`, `rejected` |
+| `evidence_article_ids` | 근거 기사 목록 |
+| `discovered_at` | 발견 시각 |
+| `expires_at` | 만료 기준시각 |
+| `rule_version` | 생성 규칙 버전 |
+
+### 4.8 disclosures
+
+| 필드 | 설명 |
+|---|---|
+| `rcept_no` | OpenDART 접수번호, unique |
+| `company_id` | 회사 FK |
+| `report_name` | 보고서명 |
+| `filer_name` | 공시 제출인 |
+| `received_at` | 접수시각 |
+| `url` | OpenDART 원문 링크 |
+| `collected_at` | 수집시각 |
+
+### 4.9 collection_runs
+
+| 필드 | 설명 |
+|---|---|
+| `job_name` | 작업 이름 |
+| `source` | KIS, NAVER, DART |
+| `query_id` | 검색 작업일 때 FK |
+| `started_at`, `finished_at` | 실행 구간 |
+| `status` | `running`, `success`, `partial`, `failed` |
+| `request_count` | 외부 호출 수 |
+| `received_count` | 수신 건수 |
+| `new_count` | 신규 건수 |
+| `duplicate_count` | 중복 건수 |
+| `ignored_count` | 무관 기사 수 |
+| `payload_hash` | Raw hash |
+| `raw_path` | Storage 경로 |
+| `error_code`, `error_message` | 오류 정보 |
+| `code_version` | 실행 코드 버전 |
+
+## 5. 정규화 규칙
+
+### 5.1 텍스트
+
+- NAVER `<b>` 태그와 HTML entity 제거
+- 연속 공백 정리
+- 원문 제목은 보존하고 비교용 제목 key를 별도로 생성
+- 검색어 포함 여부만으로 관련 기사라고 판단하지 않음
+
+### 5.2 URL
+
+- scheme·host 소문자화
+- fragment 제거
+- `utm_*`, `fbclid`, `gclid` 등 추적 파라미터 제거
+- `originallink`를 우선 canonical URL로 사용
+- URL이 없으면 제목·발행시각 조합 hash 사용
+
+### 5.3 시각
+
+- DB에는 UTC `timestamptz`로 저장
+- 거래일 판단과 화면 표시는 Asia/Seoul 기준
+- API 응답에는 데이터 기준시각 `asOf` 포함
+
+### 5.4 수치
+
+- 가격은 float가 아니라 PostgreSQL `numeric` 사용
+- 비중은 0 초과 100 이하, 합계 100 검증
+- 수익률 계산 시 거래정지·결측·상장 전 구간 제외
+
+## 6. 뉴스 관련도
+
+### 6.1 관계 유형
+
+```text
+direct   회사가 제목·요약에 직접 언급됨
+product  검증된 제품·사업이 회사와 직접 연결됨
+industry 회사명이 없지만 산업 사건의 영향 대상임
+irrelevant 수집됐지만 해당 종목과 의미 있는 관계가 없음
+```
+
+### 6.2 규칙 기반 P0
+
+P0는 회사명 위치, 문장 내 역할, 검색어-회사 연결 근거를 사용하는 설명 가능한 공통 규칙으로 시작한다.
+
+- 정식 회사명이 제목에 등장하면 direct 높은 점수
+- 요약에만 등장하면 문맥과 주어를 추가 확인
+- 모호한 그룹명 단독 등장은 direct 근거로 사용하지 않음
+- active 제품 검색어는 회사-제품 evidence가 있을 때만 product 후보
+- 산업 기사는 `query_companies.weight`와 사건 문맥을 함께 사용
+- 부고·채용·지역 행사·주가 나열처럼 분석 가치가 낮은 패턴은 감점
+
+규칙은 특정 회사명에 종속시키지 않고 모든 종목에 동일하게 적용한다. 종목별 신규·무시 비율과 근거 유형 분포를 저장하여 자동화 품질을 비교한다.
+
+### 6.3 키워드 승격
+
+- 회사명이 제목에 직접 등장한 고신뢰 seed 기사에서 추출
+- 서로 다른 기사 2건 이상
+- 서로 다른 출처 2개 이상
+- 제목 등장 또는 회사명과 같은 문맥
+- 일반어·경쟁사 전용어 제외
+- 종목당 active 3~5개 이하
+- 7일간 근거가 약해지면 만료 후보
+
+조건을 모두 통과한 후보만 자동 승격하며, 종목당 active 검색어 상한을 초과하면 점수가 낮은 후보는 candidate로 유지한다.
+
+## 7. 사건 데이터
+
+P0에서는 기사를 완전 자동 군집화하지 않는다. 먼저 기사와 공시를 종목·날짜·정규화 사건 key로 묶는 규칙 기반 사건을 만든다.
+
+### 7.1 risk_events
+
+| 필드 | 설명 |
+|---|---|
+| `company_id` | 회사 FK |
+| `event_date` | KST 기준 사건일 |
+| `event_type` | 실적, 규제, 소송, 공급망 등 |
+| `direction` | `negative`, `neutral`, `positive`, `unknown` |
+| `title` | 대표 사건명 |
+| `confidence` | 사건 신뢰도 |
+| `source_count` | 근거 문서 수 |
+| `rule_version` | 생성 규칙 버전 |
+
+공시가 연결된 경우 공시를 우선 근거로 삼는다. 같은 사건의 기사 여러 건은 `event_documents`로 연결한다.
+
+### 7.2 가격 반응
+
+사건일 이후 실제 거래일 기준 1일·5일·20일 수익률을 계산한다.
+
+```text
+return_n = close(event_date + n trading days) / close(event_date) - 1
+```
+
+사건이 장 마감 뒤 발생하면 다음 거래일을 기준일로 사용한다. 시장 대비 비정상수익률은 데이터가 안정된 뒤 추가한다.
+
+## 8. 사용자 응답 모델
+
+### 8.1 종목 뉴스
 
 ```json
 {
   "stockCode": "005930",
-  "companyName": "삼성전자",
-  "market": "KOSPI",
-  "sector": "전기전자",
-  "isActive": true
-}
-```
-
-#### MarketDaily
-
-```json
-{
-  "stockCode": "005930",
-  "tradingDate": "2026-07-20",
-  "open": 74200,
-  "high": 75100,
-  "low": 73800,
-  "close": 74900,
-  "volume": 14200123,
-  "change": 900,
-  "changeRate": 1.22,
-  "collectedAt": "2026-07-21T18:20:00+09:00",
-  "source": "KRX_OPEN_API"
-}
-```
-
-`change`와 `changeRate`는 원천 값이 일관되게 제공되면 그대로 저장하고, 그렇지 않으면 이전 거래일 종가로 서버에서 계산한다.
-
-```text
-change = 오늘 종가 - 이전 거래일 종가
-changeRate = change / 이전 거래일 종가 × 100
-```
-
-### 1.4 홈 화면 응답 형식
-
-`GET /api/stocks`
-
-```json
-{
-  "asOf": "2026-07-20T15:30:00+09:00",
-  "priceType": "EOD",
+  "asOf": "2026-07-21T07:30:00Z",
+  "stale": false,
   "items": [
     {
-      "stockCode": "005930",
-      "companyName": "삼성전자",
-      "market": "KOSPI",
-      "sector": "전기전자",
-      "close": 74900,
-      "change": 900,
-      "changeRate": 1.22,
-      "volume": 14200123,
-      "sparkline": [72100, 72800, 73500, 74000, 74900],
-      "latestEventCount": 2,
-      "dataStatus": "fresh"
+      "articleId": "uuid",
+      "title": "기사 제목",
+      "summary": "기사 요약",
+      "publishedAt": "2026-07-21T07:20:00Z",
+      "url": "https://publisher.example/article",
+      "relationType": "direct",
+      "confidence": 0.92,
+      "evidence": ["title_company_name"]
     }
   ]
 }
 ```
 
-홈 화면에 필요한 최소 필드는 다음과 같다.
+### 8.2 가격
 
-- 종목코드, 회사명, 시장, 업종
-- 마지막 종가
-- 전 거래일 대비 가격 및 등락률
-- 거래량
-- 데이터 기준일과 `EOD` 표시
-- 최근 5~20거래일 sparkline
-- 최신 사건 수 또는 최신 위험 상태
-
-사용자가 종목을 담고 편집하고 삭제하는 기능은 가격 데이터와 별개다. MVP에서 로그인 기능이 없다면 포트폴리오 선택 상태는 우선 브라우저 `localStorage`에 저장하고, 분석 요청 시 서버로 전송한다.
-
-### 1.5 그래프 데이터
-
-그래프 이미지를 받아오는 것이 아니라, 날짜별 OHLCV 배열을 JSON으로 받아 프런트에서 그린다.
-
-`GET /api/stocks/{stockCode}/prices?range=3M`
+현재가는 요청 시 KIS에서 조회한다. 호출 실패 시 마지막 일봉 종가를 반환하고 `priceType: EOD_FALLBACK`, `stale: true`로 표시한다.
 
 ```json
 {
   "stockCode": "005930",
-  "range": "3M",
-  "interval": "1d",
-  "asOf": "2026-07-20",
-  "items": [
-    {
-      "date": "2026-07-17",
-      "open": 72100,
-      "high": 73500,
-      "low": 71800,
-      "close": 73000,
-      "volume": 13102000
-    },
-    {
-      "date": "2026-07-20",
-      "open": 74200,
-      "high": 75100,
-      "low": 73800,
-      "close": 74900,
-      "volume": 14200123
-    }
+  "price": 74900,
+  "priceType": "LIVE_DELAYED",
+  "asOf": "2026-07-21T07:30:05Z",
+  "stale": false
+}
+```
+
+### 8.3 포트폴리오 분석
+
+```json
+{
+  "holdings": [
+    { "stockCode": "005930", "weight": 60 },
+    { "stockCode": "000660", "weight": 40 }
   ]
 }
 ```
 
-- 홈의 작은 그래프: `close`만 사용한 sparkline
-- 종목 상세: OHLC로 캔들 차트, volume으로 거래량 막대
-- Risk Replay: 사건일을 기준으로 수익률을 0%로 맞춘 누적수익률 선 그래프
-- 휴장일은 행을 만들지 않고 실제 거래일 배열만 반환
-
----
-
-## 2. 최신 사건
-
-### 2.1 어디서 받아오는가
-
-두 원천을 결합한다.
-
-1. **OpenDART 공시**: 공식 공시검색 API
-2. **NAVER API HUB 뉴스 검색**: 회사명·대표 약칭을 검색어로 사용
-
-OpenDART는 회사·기간·공시 유형으로 조회할 수 있고 JSON 응답을 제공한다. NAVER API HUB 뉴스 검색은 REST API이며 제목, 원문 링크, 네이버 링크, 설명, 발행시각을 받을 수 있다.
-
-- [OpenDART 공시검색 API](https://opendart.fss.or.kr/guide/detail.do?apiGrpCd=DS001&apiId=2019001)
-- [NAVER API HUB 뉴스 검색](https://api.ncloud-docs.com/docs/en/naver-api-hub-search-news)
-
-### 2.2 어떻게 받아오는가
-
-#### OpenDART
+서버는 지원 종목·개수·비중 합계를 검증하고, 선택 종목의 최신 사건과 과거 가격 반응을 비중 가중하여 계산한다.
 
 ```text
-GET https://opendart.fss.or.kr/api/list.json
-  ?crtfc_key={SERVER_KEY}
-  &corp_code={CORP_CODE}
-  &bgn_de={YYYYMMDD}
-  &end_de={YYYYMMDD}
-  &page_no=1
-  &page_count=100
+portfolioImpact = Σ(weight_i × companyImpact_i)
 ```
 
-종목코드를 DART `corp_code`로 바로 조회할 수 없으므로 고유번호 파일을 먼저 받아 매핑 테이블을 만든다.
-
-#### NAVER API HUB
-
-```text
-GET https://naverapihub.apigw.ntruss.com/search/v1/news
-  ?query={회사명 또는 회사명+핵심어}
-  &display=100
-  &start=1
-  &sort=date
-```
-
-인증키는 서버 요청 헤더에만 둔다. 뉴스 검색은 공식 문서 기준 일일 25,000회 제한이 있으므로 사용자 화면 진입마다 호출하지 않고 배치 수집한다.
-
-### 2.3 정규화 형식
-
-```json
-{
-  "documentId": "news_005930_hash",
-  "stockCode": "005930",
-  "sourceType": "news",
-  "title": "정제된 제목",
-  "summary": "정제된 설명",
-  "publishedAt": "2026-07-21T09:10:00+09:00",
-  "url": "https://publisher.example/article",
-  "contentHash": "sha256...",
-  "collectedAt": "2026-07-21T18:20:00+09:00"
-}
-```
-
-처리 순서는 다음과 같다.
-
-```text
-HTML 태그 제거
-→ URL 정규화
-→ URL/contentHash 중복 제거
-→ 회사명 오탐 필터
-→ 한국어 텍스트 정제
-→ 위험 키워드·ESG 분류
-→ 사건 방향 분류
-→ 임베딩 생성
-→ BERTopic topic 할당
-→ CompanyDocument 저장
-```
-
-### 2.4 최신 사건 생성 규칙
-
-문서 한 건을 바로 사건 한 건으로 취급하면 같은 사건을 여러 언론사가 보도할 때 중복된다. 따라서 아래 조건으로 문서를 하나의 사건으로 묶는다.
-
-```text
-같은 stockCode
-+ 같은 거래일
-+ 같은 topicId
-+ 문서 임베딩 cosine similarity ≥ 임계값
-= 하나의 RiskEvent
-```
-
-RiskEvent의 대표 제목은 공시가 있으면 공시를 우선하고, 없으면 가장 이른 원문 또는 가장 중심성이 높은 뉴스 제목을 사용한다.
-
-`최신 사건`은 단순히 가장 최근 뉴스가 아니라 다음 우선순위로 정렬한다.
-
-```text
-위험 방향
-→ 발행시각 최신순
-→ 공시 우선
-→ 문서 수와 텍스트 위험 강도
-```
-
----
-
-## 3. 과거 사건
-
-### 3.1 어디서 받아오는가
-
-최신 사건과 별도의 API가 있는 것이 아니다. 동일한 OpenDART·뉴스 수집 파이프라인을 과거 기간에 대해 실행해 사건 데이터셋을 먼저 구축한다.
-
-- 공시: OpenDART에서 MVP 대상 기업의 과거 공시를 기간별 수집
-- 뉴스: NAVER API HUB 검색 결과에서 확보 가능한 범위 수집
-- 가격: KRX 일봉으로 사건 후 시장 반응 계산
-- 벤치마크: KOSPI 지수 일봉으로 비정상수익률 계산
-
-중요한 제한이 있다. 뉴스 검색 API는 검색 결과 API이지 완전한 뉴스 아카이브를 보장하는 데이터셋이 아니다. 따라서 MVP의 과거 사건은 **공시를 기준 데이터로 삼고 뉴스는 보강 근거로 사용**한다. 뉴스가 부족한 오래된 사건까지 동일한 커버리지를 가정하면 안 된다.
-
-### 3.2 어떻게 만드는가
-
-```text
-과거 공시·뉴스 수집
-→ 최신 사건과 동일한 정규화
-→ 임베딩 생성
-→ BERTopic 학습 및 topicId 부여
-→ 같은 종목·거래일·토픽의 문서를 RiskEvent로 병합
-→ 사건일과 KRX 거래일 정렬
-→ 사건 후 1·5·20일 수익률 계산
-→ KOSPI 대비 비정상수익률 계산
-→ 벡터 DB와 RiskEvent 테이블 적재
-```
-
-장 마감 이후 발표된 문서는 다음 거래일을 사건일로 사용한다. 정확한 발행시각을 얻을 수 없는 공시는 보수적으로 다음 거래일 처리하거나 `eventTimeConfidence=low`를 기록한다.
-
-```json
-{
-  "eventId": "evt_005930_20250710_12",
-  "stockCode": "005930",
-  "eventDate": "2025-07-10",
-  "topicId": 12,
-  "topicLabel": "개인정보·보안·규제",
-  "direction": "risk",
-  "documentIds": ["dart_x", "news_y"],
-  "return1d": -0.012,
-  "return5d": -0.046,
-  "return20d": -0.031,
-  "abnormalReturn5d": -0.039,
-  "recoveryDays": 13,
-  "topicModelVersion": "bertopic-v1"
-}
-```
-
-현재 사건 검색은 먼저 `topicId`, 방향, 분석 기준시점으로 후보를 줄인 뒤 문서 임베딩 유사도로 Top-K를 선택한다. BERTopic만으로 유사 사건을 정하지 않고 **토픽 필터 + BERT 계열 문장 임베딩 유사도**를 함께 사용한다.
-
----
-
-## 4. 내 포트폴리오에 미칠 영향
-
-여기에는 하나의 만능 모델을 쓰지 않는다. 서로 다른 세 문제로 분리한다.
-
-### 4.1 과거 사건 영향 시나리오: 모델 없이 계산
-
-사용자에게 가장 먼저 보여줄 영향은 ML 예측값이 아니라 검증 가능한 산술 계산이다.
-
-```text
-종목 충격 = 현재 종목 비중 × 유사 사건의 5일 대표 수익률
-포트폴리오 충격 = 모든 종목 충격의 합
-```
-
-대표 수익률은 이상치에 덜 민감한 중앙값을 기본으로 사용하고 평균, 하락 비율, 표본 수를 함께 표시한다.
-
-예시:
-
-```text
-NAVER 비중 20%
-유사 사건 5일 수익률 중앙값 -4.6%
-포트폴리오 영향 시나리오 = 0.20 × -4.6% = -0.92%
-```
-
-이것은 미래 예측이 아니라 과거 사건 반응을 현재 비중에 적용한 시나리오다.
-
-### 4.2 향후 하락 위험: Logistic Regression → MLP
-
-별도로 각 종목의 향후 5거래일 하락 위험 확률을 학습한다.
-
-```text
-라벨 = t+5 누적수익률이 -3% 이하이면 1, 아니면 0
-```
-
-입력 특징:
-
-- 1·5·20일 수익률
-- 5·20일 변동성
-- 거래량 비율
-- 20일 낙폭
-- 이동평균 괴리
-- KOSPI 수익률
-- 최근 7일 문서 수
-- 최근 7일 텍스트 위험점수
-- E/S/G 점수
-- 유사 사건 과거 하락 비율
-
-모델 적용 순서:
-
-1. Logistic Regression 기준선
-2. MLP `Dense(64) → Dense(32) → sigmoid`
-3. 시간순 테스트에서 MLP가 Recall·Precision·F1·PR-AUC를 실제로 개선할 때만 제품에 채택
-
-표본이 적거나 MLP가 기준선보다 낫지 않으면 Logistic Regression을 사용한다. 수업 기술을 보여주기 위해 성능이 낮은 모델을 억지로 제품에 넣지 않는다.
-
-### 4.3 제안 비중: 최적화 모델
-
-제안 비중은 LLM이나 신경망이 생성하지 않는다. SciPy 또는 CVXPY의 제약 최적화를 사용한다.
-
-```text
-최소화 = 포트폴리오 분산 또는 CVaR
-       + α × 하락 위험 가중합
-       + β × 텍스트 위험 가중합
-       + γ × 현재 비중 대비 변경량
-
-제약
-- 비중 합 = 1
-- 비중 ≥ 0
-- 성향별 종목 최대 비중
-```
-
-최적화가 실패하면 현재 비중과 동일가중 포트폴리오만 비교한다.
-
----
-
-## 5. 수업에서 배운 기술의 사용 위치
-
-| 기술 | MVP 사용 여부 | 사용 위치 | 결정 이유 |
-|---|---|---|---|
-| NLP 전처리 | 필수 | 공시·뉴스 HTML 제거, 형태소 분석, 불용어 처리 | 모든 텍스트 분석의 기반 |
-| TF-IDF | 필수 | 위험 키워드, 텍스트 위험 기준선, 키워드 유사도 | 설명 가능하고 작은 데이터에서도 안정적 |
-| BERT 계열 임베딩 | 필수 | 현재 사건과 과거 사건의 의미 유사도 검색 | 단어가 달라도 의미가 비슷한 문서를 찾기 위함 |
-| BERTopic | 필수 | 사건 주제 군집화와 토픽 필터 | 현재 사건을 같은 종류의 과거 사건과 연결 |
-| Logistic Regression | 필수 기준선 | 향후 5일 하락 위험 분류 | 작은 표본에서 안정적이고 비교 기준이 됨 |
-| MLP | 조건부 P0 | 하락 위험 분류 | 기준선보다 좋아질 때만 사용 |
-| LSTM | P1 실험 | 문장 위험/일반 분류 또는 시계열 비교 실험 | 라벨과 표본이 충분하지 않으면 과적합 가능성이 큼 |
-| 기본 RNN | 제외 권장 | 별도 제품 역할 없음 | LSTM보다 장기 의존성 처리에 불리하고 중복 시연이 됨 |
-| DL | 별도 기술 아님 | MLP·LSTM·BERT를 포괄하는 분류 | “DL 사용” 자체를 별도 기능으로 만들 필요 없음 |
-| RAG·LLM | 필수 | 계산 결과를 실제 공시·뉴스 근거로 설명 | 계산이 아니라 설명만 담당 |
-| SciPy/CVXPY | 필수 | 제약조건이 있는 비중 최적화 | 검증 가능하고 결과를 통제할 수 있음 |
-
-### 권장 P0 기술 묶음
-
-```text
-KRX·OpenDART·NAVER API HUB 수집
-→ pandas 정규화·특징 생성
-→ NLP·TF-IDF 텍스트 위험
-→ BERT 임베딩·BERTopic 사건 군집
-→ Event Study Risk Replay
-→ Logistic Regression 기준선
-→ 성능이 확인되면 MLP
-→ SciPy/CVXPY 비중 최적화
-→ RAG 근거 설명
-```
-
-LSTM과 기본 RNN은 핵심 데모가 완성된 뒤 비교 실험 노트북으로 두는 것이 좋다.
-
----
-
-## 6. 모델 학습용 데이터셋
-
-### 6.1 사건 데이터셋
-
-분석 단위는 `stockCode × eventDate`다.
-
-용도:
-
-- BERTopic 학습
-- 유사 사건 검색
-- 사건 후 1·5·20일 반응 통계
-- RAG 근거 연결
-
-### 6.2 일별 위험 데이터셋
-
-분석 단위는 `stockCode × featureDate`다.
-
-```text
-가격 특징(t 이전)
-+ 텍스트 특징(t 이전)
-+ ESG 특징(t 이전)
-→ downsideLabel5d(t 이후)
-```
-
-분할:
-
-```text
-Train: 가장 오래된 70%
-Embargo: 5거래일
-Validation: 다음 15%
-Embargo: 5거래일
-Test: 가장 최근 15%
-```
-
-- 랜덤 분할 금지
-- StandardScaler는 Train에만 fit
-- class weight 우선
-- SMOTE를 쓴다면 Train 안에서만 적용
-- 사건일 이후에 나온 문서나 수익률을 해당 시점 특징에 포함하지 않음
-- 모델 비교는 Accuracy보다 Recall, Precision, F1, PR-AUC 중심
-
----
-
-## 7. 구현 순서
-
-1. MVP 대상 종목 10개와 `stockCode ↔ corpCode ↔ companyName/aliases` 확정
-2. KRX 일봉 2년 수집 및 `MarketDaily` 저장
-3. OpenDART 공시 수집 및 `CompanyDocument` 정규화
-4. NAVER 뉴스 수집·중복 제거·회사 오탐 필터
-5. 가격 그래프와 최신 사건 API 완성
-6. TF-IDF 위험점수와 사건 방향 규칙 기준선 구현
-7. BERT 임베딩·BERTopic으로 과거 사건 데이터셋 생성
-8. 사건 후 1·5·20일 수익률과 KOSPI 대비 비정상수익률 계산
-9. 포트폴리오 단순 영향 시나리오 구현
-10. Logistic Regression 학습·시간순 평가
-11. MLP 학습 후 기준선과 비교
-12. 제약 최적화와 RAG 설명 연결
-
-가장 먼저 완성할 세로 흐름은 다음이다.
-
-```text
-삼성전자 1종목
-→ 가격·공시·뉴스 수집
-→ 최신 사건 1건 생성
-→ 과거 유사 사건 검색
-→ 5일 반응 계산
-→ 사용자 비중 적용
-→ 근거와 함께 화면 표시
-```
-
-이 흐름이 성공한 뒤 10개 종목으로 확장한다.
-
----
-
-## 8. 가격 표시 최종 결정
-
-토스증권 API 키 발급을 전제로 다음처럼 확정한다.
-
-- 장중: 토스 현재가 API를 5~10초 간격으로 서버에서 다건 폴링해 `준실시간` 표시
-- 장 종료·휴장·API 장애: 마지막 검증 일봉 종가 표시
-- 그래프: 토스 1일봉 OHLCV
-- 모델 학습·Risk Replay: 토스 수정 일봉 OHLCV
-- 1분봉 그래프: P1
-- 계좌·보유자산·주문·조건주문 API: Non-Goal
-
-화면에는 `실시간` 대신 실제 갱신시각을 표시한다.
-
-```text
-75,100원 · 14:32:10 기준
-```
-
-REST 폴링이 중단되면 다음처럼 명확하게 전환한다.
-
-```text
-74,900원 · 7월 20일 종가
-```
+MVP 결과는 예측 수익률이 아니라 과거 관측을 기반으로 한 영향 시나리오로 표현한다.
+
+## 9. 모델 도입 순서
+
+### P0: 모델 없이 검증 가능한 기준선
+
+- URL·content hash 중복 제거
+- Kiwi·TF-IDF 키워드 후보
+- 규칙 기반 기사 관련도
+- 규칙 기반 사건 연결
+- 사건 전후 수익률
+- 비중 가중 포트폴리오 영향
+
+### P1: 가격 반응 기반 방향·위험 모델
+
+- 사건 이후 실제 가격 반응으로 자동 생성한 target 사용
+- Logistic Regression 기준선보다 개선될 때만 작은 MLP 도입
+- 시간순 train/validation/test 분할
+- PR-AUC, recall, calibration과 기간별 안정성 평가
+
+### P2: 유사 사건 검색
+
+- BERTopic·SentenceTransformer 실험
+- pgvector 도입 여부 평가
+- 규칙 기반 후보보다 검색 품질이 개선될 때만 운영 승격
+
+Colab은 버전 고정 Parquet를 signed URL로 받아 사용한다. Supabase Secret key를 Colab에 넣지 않는다.
+
+## 10. 데이터 품질 기준
+
+- 동일 기사 중복 저장 0건
+- 모든 기사-종목 연결에 relation type·confidence·evidence 존재
+- 종목별 직접·제품·산업·무시 비율과 근거 누락률 기준 확정
+- 수집 실행별 신규·중복·무시·오류 건수 기록
+- 최신 데이터 실패 시 마지막 정상 데이터와 `asOf/stale` 반환
+- Raw payload가 14일 보관 정책 없이 누적되지 않음
+- 모델 산출물에 dataset·model·rule version 기록
+
+## 11. 구현 순서
+
+1. 삼성전자 NAVER 최신순 증분 수집 완성
+2. 정규화·중복 제거·공통 관련도 규칙 구현
+3. Supabase migration과 RLS 작성
+4. `collection_runs`와 idempotent upsert 연결
+5. 핵심 5종목으로 품질 검증 확장
+6. KIS 일봉과 OpenDART 연결
+7. Tier A 10종목 확장
+8. Tier B를 포함한 20종목 확장
+9. 사건·가격 반응·포트폴리오 영향 연결
+10. 기준선이 완성된 뒤 Colab 모델 실험
+
+## 12. 완료 기준
+
+- 20종목의 뉴스·공시·일봉이 동일 회사 master로 연결된다.
+- 검색어와 종목이 다대다로 관리되어 산업 검색이 중복 호출되지 않는다.
+- 기사 관련도와 키워드 승격 근거를 재현할 수 있다.
+- 모든 저장이 idempotent하다.
+- 포트폴리오 분석이 1~5개 종목과 비중 합계를 검증한다.
+- 학습 모델 없이도 P0 사용자 흐름이 끝까지 동작한다.
