@@ -3,9 +3,12 @@
 import React, { useState } from 'react';
 import Link from 'next/link';
 import AddStockModal from '@/components/AddStockModal';
+import IssueAnalysisModal from '@/components/IssueAnalysisModal';
 
 export default function HomePage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isIssueModalOpen, setIsIssueModalOpen] = useState(false);
+  const [selectedIssueStock, setSelectedIssueStock] = useState("035420");
   const [expandedStock, setExpandedStock] = useState<string | null>('naver');
 
   const toggleExpand = (stockId: string) => {
@@ -79,7 +82,7 @@ export default function HomePage() {
                           <span className="text-xs text-outline">2024.05.20</span>
                           <span className="text-xs font-bold text-error">High Risk</span>
                         </div>
-                        <button className="text-primary font-label-caps text-[11px] flex items-center gap-xs hover:underline ml-md">
+                        <button onClick={() => { setSelectedIssueStock("035420"); setIsIssueModalOpen(true); }} className="text-primary font-label-caps text-[11px] flex items-center gap-xs hover:underline ml-md">
                           연관 과거 이슈 보기
                           <span className="material-symbols-outlined text-[14px]">arrow_forward</span>
                         </button>
@@ -93,7 +96,7 @@ export default function HomePage() {
                           <span className="text-xs text-outline">2024.05.18</span>
                           <span className="text-xs font-bold text-tertiary">Medium</span>
                         </div>
-                        <button className="text-primary font-label-caps text-[11px] flex items-center gap-xs hover:underline ml-md">
+                        <button onClick={() => { setSelectedIssueStock("035420"); setIsIssueModalOpen(true); }} className="text-primary font-label-caps text-[11px] flex items-center gap-xs hover:underline ml-md">
                           연관 과거 이슈 보기
                           <span className="material-symbols-outlined text-[14px]">arrow_forward</span>
                         </button>
@@ -107,7 +110,7 @@ export default function HomePage() {
                           <span className="text-xs text-outline">2024.05.15</span>
                           <span className="text-xs font-bold text-tertiary">Medium</span>
                         </div>
-                        <button className="text-primary font-label-caps text-[11px] flex items-center gap-xs hover:underline ml-md">
+                        <button onClick={() => { setSelectedIssueStock("035420"); setIsIssueModalOpen(true); }} className="text-primary font-label-caps text-[11px] flex items-center gap-xs hover:underline ml-md">
                           연관 과거 이슈 보기
                           <span className="material-symbols-outlined text-[14px]">arrow_forward</span>
                         </button>
@@ -264,6 +267,7 @@ export default function HomePage() {
         </div>
       </main>
       <AddStockModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} />
+      <IssueAnalysisModal isOpen={isIssueModalOpen} onClose={() => setIsIssueModalOpen(false)} stockCode={selectedIssueStock} />
     </>
   );
 }
