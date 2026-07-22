@@ -139,6 +139,32 @@ export async function getStockChartData(stockCode: string, period: 'D' | 'W' | '
   return data.output2; 
 }
 
+export async function getPastIssueChartData(stockCode: string, startDate: string, endDate: string) {
+  const token = await getAccessToken();
+
+  const res = await fetch(`${DOMAIN}/uapi/domestic-stock/v1/quotations/inquire-daily-itemchartprice?FID_COND_MRKT_DIV_CODE=J&FID_INPUT_ISCD=${stockCode}&FID_INPUT_DATE_1=${startDate}&FID_INPUT_DATE_2=${endDate}&FID_PERIOD_DIV_CODE=D&FID_ORG_ADJ_PRC=0`, {
+    method: 'GET',
+    headers: {
+      'Content-Type': 'application/json; charset=utf-8',
+      'authorization': `Bearer ${token}`,
+      'appkey': APP_KEY,
+      'appsecret': APP_SECRET,
+      'tr_id': 'FHKST03010100',
+    },
+    cache: 'no-store',
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`과거 차트 데이터 조회에 실패했습니다. HTTP: ${res.status}, Body: ${text}`);
+  }
+
+  const data = await res.json();
+  if (data.rt_cd !== '0') throw new Error(data.msg1 || 'API 오류가 발생했습니다.');
+  
+  return data.output2; 
+}
+
 export async function getStockInvestorData(stockCode: string) {
   const token = await getAccessToken();
   
