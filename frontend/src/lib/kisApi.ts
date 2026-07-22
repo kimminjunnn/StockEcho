@@ -4,8 +4,22 @@ import path from 'path';
 function getEnv(key: string) {
   if (process.env[key]) return process.env[key];
   try {
-    const envPath = path.resolve(process.cwd(), '../.env');
-    const envFile = fs.readFileSync(envPath, 'utf8');
+    // Try multiple possible paths depending on where Next.js is run
+    const pathsToTry = [
+      path.resolve(process.cwd(), '.env'),
+      path.resolve(process.cwd(), '../.env'),
+      path.resolve(process.cwd(), '../../.env'),
+      '/Users/seojieun/Desktop/StockEcho/.env'
+    ];
+    
+    let envFile = '';
+    for (const p of pathsToTry) {
+      if (fs.existsSync(p)) {
+        envFile = fs.readFileSync(p, 'utf8');
+        break;
+      }
+    }
+    
     const match = envFile.match(new RegExp(`^${key}=(.*)$`, 'm'));
     return match ? match[1].trim() : undefined;
   } catch (e) {
@@ -47,7 +61,9 @@ export async function getAccessToken() {
   });
 
   if (!res.ok) {
-    throw new Error('액세스 토큰 발급에 실패했습니다.');
+    const errorText = await res.text();
+    console.error("Token API Error:", res.status, errorText);
+    throw new Error(`액세스 토큰 발급에 실패했습니다: ${errorText}`);
   }
 
   const data = await res.json();
@@ -73,7 +89,9 @@ export async function getStockPrice(stockCode: string) {
   });
 
   if (!res.ok) {
-    throw new Error('현재가 조회에 실패했습니다.');
+    const errorText = await res.text();
+    console.error("Price API Error:", res.status, errorText);
+    throw new Error(`현재가 조회에 실패했습니다: ${errorText}`);
   }
 
   const data = await res.json();
@@ -82,4 +100,73 @@ export async function getStockPrice(stockCode: string) {
   }
   
   return data.output;
+}
+
+export async function getStockChartData(stockCode: string) {
+  const token = await getAccessToken();
+  
+  // Format dates: 100 days ago to today
+  const today = new Date();
+  const pastDate = new Date();
+  pastDate.setDate(today.getDate() - 100);
+  
+  const formatDate = (date: Date) => {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    return `${y}${m}${d}`;
+  };
+
+  const endDt = formatDate(today);
+  const startDt = formatDate(pastDate);
+
+  const res = await fetch(`${DOMAIN}/uapi/domestic-stock/v1/quotations/inquire-daily-itemchartprice?FID_COND_MRKT_DIV_CODE=J&FID_INPUT_ISCD=${stockCode}&FID_INPUT_DATE_1=${startDt}&FID_INPUT_DATE_2=${endDt}&FID_PERIOD_DIV_CODE=D&FID_ORG_ADJ_PRC=0`, {
+    method: 'GET',
+    headers: {
+      'Content-Type': 'application/json; charset=utf-8',
+      'authorization': `Bearer ${token}`,
+      'appkey': APP_KEY,
+      'appsecret': APP_SECRET,
+      'tr_id': 'FHKST03010100',
+    },
+    cache: 'no-store',
+  });
+
+  if (!res.ok) {
+    throw new Error('차트 데이터 조회에 실패했습니다.');
+  }
+
+  const data = await res.json();
+  if (data.rt_cd !== '0') {
+    throw new Error(data.msg1 || 'API 오류가 발생했습니다.');
+  }
+  
+  return data.output2; // output2 contains the daily price array
+}
+
+export async function getStockInvestorData(stockCode: string) {
+  const token = await getAccessToken();
+  
+  const res = await fetch(`${DOMAIN}/uapi/domestic-stock/v1/quotations/inquire-investor?FID_COND_MRKT_DIV_CODE=J&FID_INPUT_ISCD=${stockCode}`, {
+    method: 'GET',
+    headers: {
+      'Content-Type': 'application/json; charset=utf-8',
+      'authorization': `Bearer ${token}`,
+      'appkey': APP_KEY,
+      'appsecret': APP_SECRET,
+      'tr_id': 'FHKST01010900',
+    },
+    cache: 'no-store',
+  });
+
+  if (!res.ok) {
+    throw new Error('투자자 데이터 조회에 실패했습니다.');
+  }
+
+  const data = await res.json();
+  if (data.rt_cd !== '0') {
+    throw new Error(data.msg1 || 'API 오류가 발생했습니다.');
+  }
+  
+  return data.output; // output contains the investor data list
 }

@@ -173,11 +173,11 @@ export default function IssueAnalysisModal({ isOpen, onClose, stockCode = "03542
                   <span className="w-3 h-0.5 bg-primary rounded-full"></span>
                   <span>자사</span>
                 </div>
-                <div class="flex items-center gap-1.5">
+                <div className="flex items-center gap-1.5">
                   <span className="w-3 h-0.5 bg-[#b0b8c1] rounded-full"></span>
                   <span>유사 기업 A, B, C</span>
                 </div>
-                <div class="flex items-center gap-1.5">
+                <div className="flex items-center gap-1.5">
                   <span className="w-3 h-0.5 bg-[#e5e8eb] rounded-full"></span>
                   <span>전체 평균</span>
                 </div>
