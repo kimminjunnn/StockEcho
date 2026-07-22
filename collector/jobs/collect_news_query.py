@@ -49,21 +49,29 @@ def run(
     query: SearchQuery,
     source_name: str = "naver",
     display: int = 100,
+    start: int = 1,
+    sort: str = "date",
     source: NewsSource | None = None,
+    project_root: Path = PROJECT_ROOT,
 ) -> dict:
     source = source or load_source(source_name)
     if source.name not in query.sources:
         raise ValueError(f"{query.query_id} 검색어는 {source.name} 소스를 허용하지 않습니다.")
 
-    result = source.search(query.text, limit=display)
+    result = source.search(query.text, limit=display, start=start, sort=sort)
     articles = normalize_items(result.items, source=result.source)
+    checkpoint_name = (
+        f"{query.query_id}.json"
+        if sort == "date" and start == 1
+        else f"{query.query_id}__{sort}__{start}.json"
+    )
     checkpoint_path = (
-        PROJECT_ROOT
+        project_root
         / "data"
         / "state"
         / "news"
         / result.source
-        / f"{query.query_id}.json"
+        / checkpoint_name
     )
     checkpoint = load_checkpoint(checkpoint_path)
     current_payload_hash = payload_items_hash(result.payload)
@@ -73,14 +81,17 @@ def run(
     raw_path: Path | None = None
     if new_articles or current_payload_hash != checkpoint.payload_hash:
         raw_path = (
-            PROJECT_ROOT
+            project_root
             / "data"
             / "raw"
             / "news"
             / result.source
             / collected_at.strftime("%Y-%m-%d")
             / query.query_id
-            / f"{collected_at.strftime('%H%M%S')}_{current_payload_hash[:12]}.json.gz"
+            / (
+                f"{collected_at.strftime('%H%M%S')}_{sort}_{start}_"
+                f"{current_payload_hash[:12]}.json.gz"
+            )
         )
         write_raw_gzip(raw_path, result.payload)
 
@@ -92,13 +103,18 @@ def run(
             "source": result.source,
             "query_text": query.text,
             "query_type": query.query_type,
+            "search_sort": sort,
+            "search_start": start,
+            "rank": start + index,
             "collected_at": collected_at.isoformat(),
         }
-        for article in new_articles
+        for index, article in enumerate(new_articles)
     ]
     company_rows = []
     relevance_rows = []
-    for article in new_articles:
+    eligible_articles = []
+    new_document_ids = {article.document_id for article in new_articles}
+    for article in articles:
         for link in query.company_links:
             company = get_company(link.stock_code)
             relevance = classify_relevance(
@@ -122,12 +138,24 @@ def run(
                 "rule_version": relevance.rule_version,
                 "evaluated_at": collected_at.isoformat(),
             }
-            relevance_rows.append(assessment)
-            if relevance.status != "eligible":
+            if relevance.status == "eligible":
+                eligible_articles.append(
+                    {
+                        "document_id": article.document_id,
+                        "stock_code": company.stock_code,
+                        "published_at": article.published_at,
+                        "canonical_url": article.canonical_url,
+                    }
+                )
+            if article.document_id not in new_document_ids:
                 continue
-            company_rows.append({**assessment, "collected_at": collected_at.isoformat()})
+            relevance_rows.append(assessment)
+            if relevance.status == "eligible":
+                company_rows.append(
+                    {**assessment, "collected_at": collected_at.isoformat()}
+                )
 
-    processed_root = PROJECT_ROOT / "data" / "processed" / "news"
+    processed_root = project_root / "data" / "processed" / "news"
     articles_added = merge_jsonl(
         processed_root / "articles.jsonl", article_rows, key_fields=("document_id",)
     )
@@ -147,7 +175,7 @@ def run(
         key_fields=("document_id", "stock_code", "query_id", "rule_version"),
     )
     merge_jsonl(
-        PROJECT_ROOT / "data" / "processed" / "queries" / "registry.jsonl",
+        project_root / "data" / "processed" / "queries" / "registry.jsonl",
         [{**query.to_dict(), "updated_at": collected_at.isoformat()}],
         key_fields=("query_id",),
     )
@@ -158,6 +186,9 @@ def run(
     return {
         "query": query.to_dict(),
         "source": result.source,
+        "search_sort": sort,
+        "search_start": start,
+        "reported_total": int(result.payload.get("total", 0) or 0),
         "received_count": len(result.items),
         "normalized_count": len(articles),
         "new_count": len(new_articles),
@@ -165,8 +196,9 @@ def run(
         "query_links_added": query_links_added,
         "company_links_added": company_links_added,
         "relevance_rows_added": relevance_rows_added,
-        "raw_path": str(raw_path.relative_to(PROJECT_ROOT)) if raw_path else None,
-        "checkpoint_path": str(checkpoint_path.relative_to(PROJECT_ROOT)),
+        "eligible_articles": eligible_articles,
+        "raw_path": str(raw_path.relative_to(project_root)) if raw_path else None,
+        "checkpoint_path": str(checkpoint_path.relative_to(project_root)),
     }
 
 
@@ -179,6 +211,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--stock-code", action="append", required=True)
     parser.add_argument("--source", default="naver")
     parser.add_argument("--display", type=int, default=100)
+    parser.add_argument("--start", type=int, default=1)
+    parser.add_argument("--sort", choices=("date", "sim"), default="date")
     return parser.parse_args()
 
 
@@ -196,7 +230,13 @@ def main() -> None:
     )
     print(
         json.dumps(
-            run(query=query, source_name=args.source, display=args.display),
+            run(
+                query=query,
+                source_name=args.source,
+                display=args.display,
+                start=args.start,
+                sort=args.sort,
+            ),
             ensure_ascii=False,
             indent=2,
         )

@@ -177,6 +177,25 @@ class RelevanceRuleTest(unittest.TestCase):
         self.assertEqual(missing_result.status, "rejected")
         self.assertIn("topic_not_mentioned:-0.45", missing_result.evidence)
 
+    def test_expanded_query_allows_non_contiguous_topic_terms(self) -> None:
+        article = normalize_item(
+            make_item(
+                title="삼성전자, 반도체 장비의 중국 수출을 추가로 규제",
+                description="정부 조치에 대응 방안을 마련한다.",
+            )
+        )
+
+        result = classify_relevance(
+            article,
+            get_company("005930"),
+            query_text="삼성전자 반도체 수출 규제",
+            query_type="event",
+            link_weight=0.9,
+        )
+
+        self.assertEqual(result.status, "eligible")
+        self.assertIn("topic_in_title:+0.25", result.evidence)
+
     def test_mixed_news_roundup_is_not_eligible(self) -> None:
         article = normalize_item(
             make_item(

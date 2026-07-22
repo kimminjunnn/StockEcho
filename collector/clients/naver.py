@@ -35,11 +35,14 @@ class NaverNewsClient:
         *,
         display: int = 100,
         start: int = 1,
+        sort: str = "date",
     ) -> dict[str, Any]:
         if not 1 <= display <= 100:
             raise ValueError("display는 1~100이어야 합니다.")
         if not 1 <= start <= 1000:
             raise ValueError("start는 1~1000이어야 합니다.")
+        if sort not in {"date", "sim"}:
+            raise ValueError("sort는 date 또는 sim이어야 합니다.")
 
         response = self._session.get(
             NAVER_NEWS_API_URL,
@@ -51,7 +54,7 @@ class NaverNewsClient:
                 "query": query,
                 "display": display,
                 "start": start,
-                "sort": "date",
+                "sort": sort,
                 "format": "json",
             },
             timeout=self._timeout_seconds,

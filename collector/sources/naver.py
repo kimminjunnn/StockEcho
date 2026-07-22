@@ -12,8 +12,20 @@ class NaverNewsSource:
     def __init__(self, client: NaverNewsClient) -> None:
         self._client = client
 
-    def search(self, query: str, *, limit: int = 100) -> SourceSearchResult:
-        payload = self._client.search_news(query, display=limit)
+    def search(
+        self,
+        query: str,
+        *,
+        limit: int = 100,
+        start: int = 1,
+        sort: str = "date",
+    ) -> SourceSearchResult:
+        payload = self._client.search_news(
+            query,
+            display=limit,
+            start=start,
+            sort=sort,
+        )
         return SourceSearchResult(
             source=self.name,
             payload=payload,

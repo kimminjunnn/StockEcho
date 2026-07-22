@@ -16,5 +16,12 @@ class SourceSearchResult:
 class NewsSource(Protocol):
     name: str
 
-    def search(self, query: str, *, limit: int = 100) -> SourceSearchResult:
+    def search(
+        self,
+        query: str,
+        *,
+        limit: int = 100,
+        start: int = 1,
+        sort: str = "date",
+    ) -> SourceSearchResult:
         ...

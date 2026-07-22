@@ -64,6 +64,15 @@ def _status_for(confidence: float) -> str:
     return "rejected"
 
 
+def _contains_all_topic_terms(text: str, topic: str) -> bool:
+    terms = {
+        term
+        for term in re.findall(r"[가-힣a-z0-9]+", topic.casefold())
+        if len(term) >= 2
+    }
+    return bool(terms) and all(term in text for term in terms)
+
+
 def classify_relevance(
     article: NormalizedNewsArticle,
     company: Company,
@@ -100,8 +109,17 @@ def classify_relevance(
     else:
         evidence.append("company_not_mentioned:+0.00")
 
-    topic_in_title = bool(topic and topic in title)
-    topic_in_summary = bool(topic and topic in summary)
+    topic_in_title = bool(
+        topic and (topic in title or _contains_all_topic_terms(title, topic))
+    )
+    topic_in_summary = bool(
+        topic
+        and not topic_in_title
+        and (
+            topic in summary
+            or _contains_all_topic_terms(f"{title} {summary}", topic)
+        )
+    )
     if topic_in_title:
         score += 0.25
         evidence.append("topic_in_title:+0.25")
