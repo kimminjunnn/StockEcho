@@ -58,6 +58,23 @@ export default function AddStockModal({ isOpen, savedHoldings, onClose, onSave }
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const previousOverflow = document.body.style.overflow;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+
+    document.body.style.overflow = 'hidden';
+    document.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isOpen, onClose]);
+
   // Handle Search Input Change
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const query = e.target.value;
@@ -189,50 +206,84 @@ export default function AddStockModal({ isOpen, savedHoldings, onClose, onSave }
   };
 
   return (
-    <div className="fixed inset-0 z-40 flex items-center justify-center p-md">
-      <div className="fixed inset-0 bg-black/50 modal-overlay z-40" onClick={onClose}></div>
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center overflow-y-auto p-0 sm:p-md"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="edit-stocks-title"
+    >
+      <div className="fixed inset-0 bg-black/50 modal-overlay" onClick={onClose}></div>
       
-      <div className="relative z-50 w-full max-w-[1000px] bg-surface-container-lowest rounded-xl shadow-xl overflow-hidden flex flex-col max-h-[90vh]">
-        <header className="flex justify-between items-center px-xl py-lg bg-surface-container-lowest border-b border-surface-variant sticky top-0 z-10">
-          <h1 className="font-headline-md text-headline-md text-on-surface">종목 편집하기</h1>
+      <div className="relative z-10 flex h-[100dvh] max-h-[100dvh] w-full flex-col overflow-hidden bg-surface-container-lowest shadow-xl sm:h-auto sm:max-h-[calc(100dvh-2rem)] sm:max-w-[1000px] sm:rounded-xl">
+        <header className="z-10 flex shrink-0 items-center justify-between border-b border-surface-variant bg-surface-container-lowest px-base py-md sm:px-xl sm:py-lg">
+          <h1 id="edit-stocks-title" className="font-headline-md text-xl text-on-surface sm:text-headline-md">종목 편집하기</h1>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="종목 편집 창 닫기"
+            className="flex h-10 w-10 items-center justify-center rounded-full text-on-surface-variant transition-colors hover:bg-surface-container-high"
+          >
+            <span className="material-symbols-outlined">close</span>
+          </button>
         </header>
 
-        <main className="p-xl space-y-xl overflow-y-auto">
-          <section className="grid grid-cols-1 md:grid-cols-3 gap-lg bg-surface border border-outline-variant p-xl rounded-xl">
-            <div className="space-y-xs">
-              <p className="font-body-sm text-on-surface-variant">총 평가 금액</p>
-              <p className="font-headline-md text-headline-md text-on-surface">{formatValuationKorean(totalValuation)}</p>
+        <main className="min-h-0 flex-1 space-y-lg overflow-y-auto p-base sm:space-y-xl sm:p-xl">
+          <section className="grid grid-cols-1 gap-sm rounded-2xl bg-surface-container-low p-sm sm:grid-cols-2 sm:gap-md sm:p-md md:grid-cols-3" aria-label="보유 자산 요약">
+            <div className="flex min-w-0 items-start justify-between gap-sm rounded-xl border border-outline-variant bg-surface-container-lowest p-md shadow-sm sm:col-span-2 md:col-span-1">
+              <div className="min-w-0">
+                <p className="font-body-sm text-xs font-semibold text-on-surface-variant">총 평가 금액</p>
+                <p className="mt-sm font-headline-md text-xl font-black leading-tight tracking-tight text-on-surface tabular-nums break-keep sm:text-2xl">{formatValuationKorean(totalValuation)}</p>
+              </div>
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary-fixed text-on-primary-fixed-variant" aria-hidden="true">
+                <span className="material-symbols-outlined text-[22px]">account_balance_wallet</span>
+              </div>
             </div>
-            <div className="space-y-xs">
-              <p className="font-body-sm text-on-surface-variant">보유 종목</p>
-              <p className="font-headline-md text-headline-md text-on-surface">{holdings.length}개</p>
+            <div className="flex min-w-0 items-start justify-between gap-sm rounded-xl border border-outline-variant bg-surface-container-lowest p-md shadow-sm">
+              <div className="min-w-0">
+                <p className="font-body-sm text-xs font-semibold text-on-surface-variant">보유 종목</p>
+                <p className="mt-sm font-headline-md text-xl font-black leading-tight tracking-tight text-on-surface tabular-nums sm:text-2xl">{holdings.length}개</p>
+              </div>
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-secondary-fixed text-on-secondary-fixed-variant" aria-hidden="true">
+                <span className="material-symbols-outlined text-[22px]">pie_chart</span>
+              </div>
             </div>
-            <div className="space-y-xs">
-              <p className="font-body-sm text-on-surface-variant">총 보유 수량</p>
-              <p className="font-headline-md text-headline-md text-on-surface">{formatNumber(totalQuantity)}주</p>
+            <div className="flex min-w-0 items-start justify-between gap-sm rounded-xl border border-outline-variant bg-surface-container-lowest p-md shadow-sm">
+              <div className="min-w-0">
+                <p className="font-body-sm text-xs font-semibold text-on-surface-variant">총 보유 수량</p>
+                <p className="mt-sm font-headline-md text-xl font-black leading-tight tracking-tight text-on-surface tabular-nums sm:text-2xl">{formatNumber(totalQuantity)}주</p>
+              </div>
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-tertiary-fixed text-on-tertiary-fixed-variant" aria-hidden="true">
+                <span className="material-symbols-outlined text-[22px]">layers</span>
+              </div>
             </div>
           </section>
 
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-xl">
             <section className="lg:col-span-8 space-y-lg">
               <h2 className="font-title-sm text-title-sm text-on-surface px-xs">보유 현황</h2>
-              <div className="overflow-x-auto">
-                <table className="w-full text-left">
+              <div className="w-full overflow-hidden">
+                <table className="w-full table-fixed text-left">
+                  <colgroup>
+                    <col className="w-[24%]" />
+                    <col className="w-[20%]" />
+                    <col className="w-[24%]" />
+                    <col className="w-[32%]" />
+                  </colgroup>
                   <thead className="border-y border-surface-variant">
                     <tr>
-                      <th className="py-md px-md font-label-caps text-label-caps text-on-surface-variant">종목명</th>
-                      <th className="py-md px-md font-label-caps text-label-caps text-on-surface-variant text-right">보유 주식 수</th>
-                      <th className="py-md px-md font-label-caps text-label-caps text-on-surface-variant text-right">주가</th>
-                      <th className="py-md px-md font-label-caps text-label-caps text-on-surface-variant text-right">평가 금액</th>
+                      <th className="py-md pl-xs pr-0 font-label-caps text-[13px] leading-tight text-on-surface-variant break-keep sm:pl-md sm:pr-xs">종목명</th>
+                      <th className="py-md pl-0 pr-xs text-right font-label-caps text-[13px] leading-tight text-on-surface-variant break-keep sm:pl-xs sm:pr-md">보유 주식 수</th>
+                      <th className="px-xs py-md text-right font-label-caps text-[13px] leading-tight text-on-surface-variant break-keep sm:px-md">주가</th>
+                      <th className="py-md pl-xs pr-xs text-right font-label-caps text-[13px] leading-tight text-on-surface-variant break-keep sm:px-md">평가 금액</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-surface-variant">
                     {holdings.map((h) => (
                       <tr key={h.code} className="hover:bg-surface-container transition-colors group cursor-pointer" onClick={() => { setSearchQuery(h.name); setSelectedQuantity(h.quantity); setSearchedData({ code: h.code, name: h.name, price: h.currentPrice || 0, changeRate: h.changeRate }); }}>
-                        <td className="py-lg px-md font-body-md text-on-surface font-semibold">{h.name}</td>
-                        <td className="py-lg px-md font-body-md text-on-surface text-right">{formatNumber(h.quantity)}주</td>
-                        <td className="py-lg px-md font-body-md text-on-surface text-right">₩{formatNumber(h.currentPrice || 0)}</td>
-                        <td className="py-lg px-md font-body-md text-on-surface text-right font-bold">₩{formatNumber((h.currentPrice || 0) * h.quantity)}</td>
+                        <td className="py-lg pl-xs pr-0 font-body-md text-xs font-semibold text-on-surface break-keep sm:pl-md sm:pr-xs sm:text-base">{h.name}</td>
+                        <td className="py-lg pl-0 pr-xs text-right font-body-md text-xs text-on-surface [overflow-wrap:anywhere] sm:pl-xs sm:pr-md sm:text-base">{formatNumber(h.quantity)}주</td>
+                        <td className="px-xs py-lg text-right font-body-md text-xs text-on-surface [overflow-wrap:anywhere] sm:px-md sm:text-base">₩{formatNumber(h.currentPrice || 0)}</td>
+                        <td className="py-lg pl-xs pr-xs text-right font-body-md text-xs font-bold text-on-surface [overflow-wrap:anywhere] sm:px-md sm:text-base">₩{formatNumber((h.currentPrice || 0) * h.quantity)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -266,7 +317,7 @@ export default function AddStockModal({ isOpen, savedHoldings, onClose, onSave }
                 
                 {/* Autocomplete Dropdown */}
                 {isDropdownOpen && searchResults.length > 0 && (
-                  <div className="absolute top-full left-0 right-0 mt-2 bg-surface-container-lowest border border-outline-variant rounded-xl shadow-lg z-50 overflow-hidden max-h-48 overflow-y-auto">
+                  <div className="mt-2 max-h-48 overflow-y-auto overflow-x-hidden rounded-xl border border-outline-variant bg-surface-container-lowest shadow-lg">
                     {searchResults.map((result) => (
                       <div 
                         key={result.code}
@@ -338,9 +389,9 @@ export default function AddStockModal({ isOpen, savedHoldings, onClose, onSave }
           </div>
         </main>
 
-        <footer className="px-xl py-lg bg-surface-container border-t border-surface-variant flex justify-end gap-md">
-          <button onClick={onClose} className="px-xl py-md text-on-surface-variant font-body-md font-semibold hover:bg-surface-container-highest rounded-lg transition-colors">닫기</button>
-          <button onClick={() => onSave(holdings)} className="px-xl py-md bg-secondary text-on-secondary rounded-lg font-body-md font-bold hover:shadow-lg transition-all active:translate-y-px">수정 사항 저장</button>
+        <footer className="flex shrink-0 flex-col gap-sm border-t border-surface-variant bg-surface-container px-base py-md sm:flex-row sm:justify-end sm:gap-md sm:px-xl sm:py-lg">
+          <button onClick={onClose} className="w-full rounded-lg px-xl py-md font-body-md font-semibold text-on-surface-variant transition-colors hover:bg-surface-container-highest sm:w-auto">닫기</button>
+          <button onClick={() => onSave(holdings)} className="w-full rounded-lg bg-secondary px-xl py-md font-body-md font-bold text-on-secondary transition-all hover:shadow-lg active:translate-y-px sm:w-auto">수정 사항 저장</button>
         </footer>
       </div>
     </div>
