@@ -91,6 +91,112 @@ data/processed/keyword_seed/<stockCode>_articles.jsonl
 
 `bertopic` 파일에는 검색어 관계 중 하나라도 `eligible`인 기사를 한 번만 넣는다. `keyword_seed` 파일에는 회사명 직접 검색에서 통과한 기사만 넣어 확장 키워드의 순환 오염을 막는다.
 
+## 키워드 기반 과거 이슈 뉴스 수집
+
+현재 Event의 핵심 키워드로 과거 뉴스를 찾을 때는 자사 정확 검색, 기업명을 뺀 공통 산업 검색, 부족할 때만 동종기업 검색 순서로 `sort=sim`을 호출한다.
+
+```bash
+.venv/bin/python -m collector.jobs.backfill_issue_news \
+  --stock-code 005930 \
+  --keyword 반도체 \
+  --keyword 수출 \
+  --keyword 규제 \
+  --before 2026-07-22
+```
+
+`--before` 당일과 미래 기사는 과거 후보 집계에서 제외한다. 기본적으로 `반도체 수출 규제`와 보수적인 동의어 변형인 `반도체 수출 통제`를 만들고, 자사 날짜별 Event proxy 1건과 서로 다른 외부 기업 2곳을 확보하면 호출을 멈춘다. 한 날짜의 Event proxy는 서로 다른 출처가 기본 2곳 이상이어야 한다.
+
+한 검색어는 최대 3페이지, 전체 작업은 최대 12회만 호출한다. 결과는 다음 경로에 저장하며 동일한 종목·키워드·기준일 요청은 저장 결과를 재사용한다. 다시 호출하려면 `--refresh`를 사용한다.
+
+```text
+data/processed/historical_search/issue_search_<hash>.json
+data/state/news/<source>/<queryId>__sim__<start>.json
+```
+
+수집 후 관련 기업에 `reevaluate_company_news`를 실행하고 BERTopic/Event 산출물을 다시 생성해야 실제 과거 Event 검색 대상에 포함된다.
+
+## BERTopic Topic/Event 실험
+
+수집기와 분리된 실험 의존성을 설치한 뒤 종목별 corpus를 실행한다.
+
+```bash
+.venv/bin/python -m pip install -r requirements-bertopic.txt
+.venv/bin/python -m collector.jobs.run_bertopic --stock-code 005930
+.venv/bin/python -m collector.jobs.run_bertopic --stock-code 000660
+```
+
+기본 임베딩은 한국어 SentenceTransformer인 `jhgan/ko-sroberta-multitask`를 사용한다. BERTopic c-TF-IDF의 `CountVectorizer`에는 Kiwi 명사·동사·형용사 tokenizer를 연결한다. BERTopic의 `-1` 문서는 하나의 가짜 Topic으로 묶지 않고 각각 outlier로 저장한다.
+
+Topic 내부 기사는 한국 시간(`Asia/Seoul`)의 발행일별 Event로 분리한다. 주요 이슈는 outlier를 제외하고 기간 내 기사 2건 이상인 서로 다른 Topic 중 Top 3를 선정한다. 7일에 세 Topic이 없으면 14일, 그래도 부족하면 30일까지 순서대로 보충한다. `--as-of YYYY-MM-DD`를 생략하면 corpus의 최신 발행일이 기준일이다.
+
+Event의 화면용 이슈명은 단순 빈도 상위 단어를 이어 붙이지 않는다. Kiwi로 제목의 2~3어절 후보 구문을 만들고, Event 임베딩 중심과의 유사도와 기사 커버리지를 합산한 뒤 MMR로 중복 구문을 줄인다. 최종 이름은 중심에 가까운 대표 기사 3개의 자연어 구절 중 핵심 구문을 가장 잘 포괄하는 문장을 추출한다. 결과에는 `label_method=extractive-semantic-mmr-v1`을 기록하며, LLM은 사용하지 않는다.
+
+```text
+data/processed/topics/<stockCode>_topics.jsonl
+data/processed/topics/<stockCode>_major_issues.jsonl
+```
+
+뉴스 수집부터 주요 이슈 생성까지 여러 종목을 한 번에 갱신하려면 통합 작업을 실행한다. 종목별 실패는 다른 종목의 실행을 막지 않으며 마지막 결과에 함께 표시된다.
+
+```bash
+.venv/bin/python -m collector.jobs.analyze_companies \
+  --stock-code 042700 \
+  --stock-code 005380 \
+  --stock-code 035420 \
+  --stock-code 035720
+```
+
+백엔드 정기 작업에서 지원 종목 전체를 갱신할 때는 다음 명령을 사용한다.
+
+```bash
+.venv/bin/python -m collector.jobs.analyze_companies --all-supported
+```
+
+## Supabase 저장 및 분석 큐
+
+루트 `.env`에 `SUPABASE_DB_URL`, `SUPABASE_URL`, `SUPABASE_SECRET_KEY`를 설정한다. 최초 한 번 스키마를 적용하고 기존 snapshot을 이전한다.
+
+```bash
+.venv/bin/python -m collector.jobs.setup_supabase \
+  --stock-code 005930 \
+  --stock-code 000660
+```
+
+분석 요청은 `stock_analysis` 큐에 넣고 Python worker가 순서대로 처리한다. 동일 종목이 이미 대기 또는 실행 중이면 중복 요청을 만들지 않는다.
+
+```bash
+.venv/bin/python -m collector.jobs.enqueue_analysis --stock-code 005930
+.venv/bin/python -m collector.jobs.enqueue_analysis --all-supported
+.venv/bin/python -m collector.jobs.run_analysis_worker
+```
+
+worker는 성공한 메시지를 archive하고 분석 결과·마지막 실행 시각을 Supabase에 저장한다. 실패한 메시지는 visibility timeout 뒤 재시도하며 세 번째 실패에서는 archive한다.
+
+`runtime_topic_id`는 실험 진단용 BERTopic 숫자일 뿐 외부 참조 키로 사용하지 않는다. 영구 참조 후보인 `topic_id`와 `event_id`는 `model_version`, 종목 코드, 소속 문서 fingerprint를 바탕으로 만든 UUIDv5다. corpus 또는 모델 버전이 달라지면 새 ID가 생기므로, 운영 단계에서 Topic 계보를 유지하려면 이전 snapshot과의 유사도 매칭 registry를 추가해야 한다.
+
+### Google Colab
+
+[`notebooks/StockEcho_BERTopic_Colab.ipynb`](../notebooks/StockEcho_BERTopic_Colab.ipynb)을 Colab에서 열면 설치, JSONL 업로드, GPU/CPU 자동 선택, 실행, 결과 zip 다운로드를 순서대로 진행할 수 있다.
+
+직접 셀을 구성할 때는 저장소를 연 뒤 아래 셀을 순서대로 실행한다. GPU runtime을 선택하면 `--device cuda`, CPU면 해당 옵션을 생략한다.
+
+```python
+!git clone <repository-url> StockEcho
+%cd StockEcho
+!pip install -q -r requirements-bertopic.txt
+```
+
+로컬의 Git 제외 입력 파일을 Colab 세션의 `data/processed/bertopic/`에 업로드하거나 Google Drive에서 복사한 다음 실행한다.
+
+```python
+!python -m collector.jobs.run_bertopic \
+  --stock-code 005930 \
+  --device cuda \
+  --output-dir /content/bertopic-results
+```
+
+모델 다운로드가 필요한 첫 실행에는 인터넷 연결이 필요하다. 결과 디렉터리를 Drive로 지정하면 세션 종료 후에도 JSONL을 보존할 수 있다.
+
 ## 테스트
 
 ```bash
