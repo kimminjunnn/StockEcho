@@ -39,17 +39,7 @@ def analyze_company(*, stock_code: str, display: int, device: str | None) -> dic
         display=display,
     )
     relevance = reevaluate_company_news(stock_code=stock_code)
-    input_path = (
-        PROJECT_ROOT / "data" / "processed" / "bertopic" / f"{stock_code}_articles.jsonl"
-    )
-    output_dir = PROJECT_ROOT / "data" / "processed" / "topics"
-    topic_modeling = run_topic_pipeline(
-        input_path=input_path,
-        topics_output_path=output_dir / f"{stock_code}_topics.jsonl",
-        issues_output_path=output_dir / f"{stock_code}_major_issues.jsonl",
-        config=TopicModelConfig(),
-        device=device,
-    )
+    topic_modeling = analyze_existing_company(stock_code=stock_code, device=device)
     return {
         "stock_code": stock_code,
         "collection": collection,
@@ -58,6 +48,22 @@ def analyze_company(*, stock_code: str, display: int, device: str | None) -> dic
         "relevance": relevance,
         "topic_modeling": topic_modeling,
     }
+
+
+def analyze_existing_company(*, stock_code: str, device: str | None) -> dict:
+    """이미 수집·평가된 corpus로 무거운 Topic 분석만 실행한다."""
+
+    input_path = (
+        PROJECT_ROOT / "data" / "processed" / "bertopic" / f"{stock_code}_articles.jsonl"
+    )
+    output_dir = PROJECT_ROOT / "data" / "processed" / "topics"
+    return run_topic_pipeline(
+        input_path=input_path,
+        topics_output_path=output_dir / f"{stock_code}_topics.jsonl",
+        issues_output_path=output_dir / f"{stock_code}_major_issues.jsonl",
+        config=TopicModelConfig(),
+        device=device,
+    )
 
 
 def main() -> None:

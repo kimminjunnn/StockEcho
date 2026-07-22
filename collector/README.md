@@ -172,6 +172,15 @@ data/processed/topics/<stockCode>_major_issues.jsonl
 
 worker는 성공한 메시지를 archive하고 분석 결과·마지막 실행 시각을 Supabase에 저장한다. 실패한 메시지는 visibility timeout 뒤 재시도하며 세 번째 실패에서는 archive한다.
 
+운영에서는 뉴스 수집과 Topic 분석을 분리한다. 아래 수집 작업은 Supabase에 새 기사와 관련도를 먼저 저장한 뒤, `eligible` 새 기사가 5건 이상이면 분석 큐에 넣는다. 마지막 분석 후 24시간이 지난 종목은 새 기사 1건만 있어도 갱신하고, 공시·거래정지 등 긴급 이벤트는 즉시 우선 등록한다.
+
+```bash
+.venv/bin/python -m collector.jobs.collect_and_schedule --all-supported
+.venv/bin/python -m collector.jobs.run_analysis_worker
+```
+
+예를 들어 서버의 cron에서 첫 명령을 매시간 실행하고, worker는 별도 프로세스로 계속 실행한다. worker는 큐가 비어 있으면 기본 5초 간격으로 다시 확인하며 `--poll-interval`로 간격을 바꿀 수 있다. Supabase Queue는 작업 상태와 재시도를 보존하지만 Python 수집기와 BERTopic 자체를 실행하지는 않으므로 이 두 명령이 돌아갈 서버가 필요하다.
+
 `runtime_topic_id`는 실험 진단용 BERTopic 숫자일 뿐 외부 참조 키로 사용하지 않는다. 영구 참조 후보인 `topic_id`와 `event_id`는 `model_version`, 종목 코드, 소속 문서 fingerprint를 바탕으로 만든 UUIDv5다. corpus 또는 모델 버전이 달라지면 새 ID가 생기므로, 운영 단계에서 Topic 계보를 유지하려면 이전 snapshot과의 유사도 매칭 registry를 추가해야 한다.
 
 ### Google Colab
