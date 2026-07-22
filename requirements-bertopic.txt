@@ -1,0 +1,8 @@
+# 기존 수집 의존성을 먼저 설치한다.
+-r requirements.txt
+
+bertopic>=0.17,<1
+sentence-transformers>=3,<6
+scikit-learn>=1.5,<2
+umap-learn>=0.5.7,<1
+hdbscan>=0.8.40,<1
