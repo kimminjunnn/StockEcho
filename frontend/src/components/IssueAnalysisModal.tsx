@@ -9,9 +9,18 @@ interface IssueAnalysisModalProps {
   stockCode?: string;
 }
 
+interface IssueChartPoint {
+  stck_clpr: string;
+}
+
+interface IssueChartResponse {
+  success: boolean;
+  data?: IssueChartPoint[];
+}
+
 export default function IssueAnalysisModal({ isOpen, onClose, stockCode = "035420" }: IssueAnalysisModalProps) {
   const [chartPeriod, setChartPeriod] = useState<1 | 5 | 15 | 30>(15);
-  const [issueData, setIssueData] = useState<any[]>([]);
+  const [issueData, setIssueData] = useState<IssueChartPoint[]>([]);
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
@@ -34,7 +43,7 @@ export default function IssueAnalysisModal({ isOpen, onClose, stockCode = "03542
       try {
         const res = await fetch(`/api/stock/issue-chart/${stockCode}?startDate=${formatDate(startDt)}&endDate=${formatDate(endDt)}`);
         if (res.ok) {
-          const data = await res.json();
+          const data = await res.json() as IssueChartResponse;
           if (data.success && data.data) {
             // KIS API returns data from most recent to oldest. We want chronologically from oldest (start) to newest (end)
             setIssueData([...data.data].reverse());
@@ -136,7 +145,7 @@ export default function IssueAnalysisModal({ isOpen, onClose, stockCode = "03542
                         <span className="font-bold text-[14px] text-[#191f28]">기업 A</span>
                         <span className="text-[11px] text-[#8b95a1]">반도체 부문</span>
                       </div>
-                      <p className="text-[12px] text-[#4e5968] mt-0.5">'반도체 생산 라인 가동 중단 사고'</p>
+                      <p className="text-[12px] text-[#4e5968] mt-0.5">‘반도체 생산 라인 가동 중단 사고’</p>
                     </div>
                   </div>
                   <div className="text-right flex-shrink-0 ml-2">
@@ -155,7 +164,7 @@ export default function IssueAnalysisModal({ isOpen, onClose, stockCode = "03542
                         <span className="font-bold text-[14px] text-[#191f28]">기업 B</span>
                         <span className="text-[11px] text-[#8b95a1]">디스플레이 부문</span>
                       </div>
-                      <p className="text-[12px] text-[#4e5968] mt-0.5">'공급망 차질로 인한 실적 악화 우려'</p>
+                      <p className="text-[12px] text-[#4e5968] mt-0.5">‘공급망 차질로 인한 실적 악화 우려’</p>
                     </div>
                   </div>
                   <div className="text-right flex-shrink-0 ml-2">
@@ -253,7 +262,7 @@ export default function IssueAnalysisModal({ isOpen, onClose, stockCode = "03542
 
         <footer className="w-full bg-[#f2f4f6] px-6 py-4 text-center border-t border-[#e5e8eb]">
           <p className="text-[11px] text-[#6b7684] leading-relaxed">
-            '노조 / 파업' 관련 이슈로 '반도체/SI' 기업 관련 주가가 일 평균 <span className="text-primary font-bold">"6.31%"</span> 하락했습니다. 예상되는 '라인'의 주가 변동은 <span className="text-primary font-bold">"-4.5%"</span> 입니다.
+            ‘노조 / 파업’ 관련 이슈로 ‘반도체/SI’ 기업 관련 주가가 일 평균 <span className="text-primary font-bold">“6.31%”</span> 하락했습니다. 예상되는 ‘라인’의 주가 변동은 <span className="text-primary font-bold">“-4.5%”</span> 입니다.
           </p>
           <p className="text-[10px] text-[#b0b8c1] mt-1">
             *본 분석은 과거 유사 사건 데이터 기반의 시뮬레이션이며, 확정된 미래 주가 예측이나 매수·매도 투자 권유가 아닙니다.
