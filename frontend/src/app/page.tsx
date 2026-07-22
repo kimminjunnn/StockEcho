@@ -126,7 +126,9 @@ export default function HomePage() {
                   <div className="col-span-4 flex items-center gap-md">
                     <div className="h-10 w-10 rounded-lg bg-[#00C300]/10 flex items-center justify-center font-bold text-[#00C300]">L</div>
                     <div>
-                      <h3 className="font-title-sm text-md font-bold">라인 (LYCorp)</h3>
+                      <Link href={`/stock/4689`} className="hover:underline">
+                        <h3 className="font-title-sm text-md font-bold">라인 (LYCorp)</h3>
+                      </Link>
                       <span className="text-xs text-outline font-body-sm">4689.T</span>
                     </div>
                   </div>

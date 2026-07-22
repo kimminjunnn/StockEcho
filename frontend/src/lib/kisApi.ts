@@ -4,7 +4,6 @@ import path from 'path';
 function getEnv(key: string) {
   if (process.env[key]) return process.env[key];
   try {
-    // Try multiple possible paths depending on where Next.js is run
     const pathsToTry = [
       path.resolve(process.cwd(), '.env'),
       path.resolve(process.cwd(), '../.env'),
@@ -88,27 +87,24 @@ export async function getStockPrice(stockCode: string) {
     cache: 'no-store',
   });
 
-  if (!res.ok) {
-    const errorText = await res.text();
-    console.error("Price API Error:", res.status, errorText);
-    throw new Error(`현재가 조회에 실패했습니다: ${errorText}`);
-  }
+  if (!res.ok) throw new Error('현재가 조회에 실패했습니다.');
 
   const data = await res.json();
-  if (data.rt_cd !== '0') {
-    throw new Error(data.msg1 || 'API 오류가 발생했습니다.');
-  }
+  if (data.rt_cd !== '0') throw new Error(data.msg1 || 'API 오류가 발생했습니다.');
   
   return data.output;
 }
 
-export async function getStockChartData(stockCode: string) {
+export async function getStockChartData(stockCode: string, period: 'D' | 'W' | 'M' | 'Y' = 'D') {
   const token = await getAccessToken();
   
-  // Format dates: 100 days ago to today
   const today = new Date();
   const pastDate = new Date();
-  pastDate.setDate(today.getDate() - 100);
+  
+  if (period === 'D') pastDate.setDate(today.getDate() - 100);
+  else if (period === 'W') pastDate.setFullYear(today.getFullYear() - 1);
+  else if (period === 'M') pastDate.setFullYear(today.getFullYear() - 5);
+  else if (period === 'Y') pastDate.setFullYear(today.getFullYear() - 20);
   
   const formatDate = (date: Date) => {
     const y = date.getFullYear();
@@ -120,7 +116,7 @@ export async function getStockChartData(stockCode: string) {
   const endDt = formatDate(today);
   const startDt = formatDate(pastDate);
 
-  const res = await fetch(`${DOMAIN}/uapi/domestic-stock/v1/quotations/inquire-daily-itemchartprice?FID_COND_MRKT_DIV_CODE=J&FID_INPUT_ISCD=${stockCode}&FID_INPUT_DATE_1=${startDt}&FID_INPUT_DATE_2=${endDt}&FID_PERIOD_DIV_CODE=D&FID_ORG_ADJ_PRC=0`, {
+  const res = await fetch(`${DOMAIN}/uapi/domestic-stock/v1/quotations/inquire-daily-itemchartprice?FID_COND_MRKT_DIV_CODE=J&FID_INPUT_ISCD=${stockCode}&FID_INPUT_DATE_1=${startDt}&FID_INPUT_DATE_2=${endDt}&FID_PERIOD_DIV_CODE=${period}&FID_ORG_ADJ_PRC=0`, {
     method: 'GET',
     headers: {
       'Content-Type': 'application/json; charset=utf-8',
@@ -133,15 +129,14 @@ export async function getStockChartData(stockCode: string) {
   });
 
   if (!res.ok) {
-    throw new Error('차트 데이터 조회에 실패했습니다.');
+    const text = await res.text();
+    throw new Error(`차트 데이터 조회에 실패했습니다. HTTP: ${res.status}, Body: ${text}`);
   }
 
   const data = await res.json();
-  if (data.rt_cd !== '0') {
-    throw new Error(data.msg1 || 'API 오류가 발생했습니다.');
-  }
+  if (data.rt_cd !== '0') throw new Error(data.msg1 || 'API 오류가 발생했습니다.');
   
-  return data.output2; // output2 contains the daily price array
+  return data.output2; 
 }
 
 export async function getStockInvestorData(stockCode: string) {
@@ -159,14 +154,34 @@ export async function getStockInvestorData(stockCode: string) {
     cache: 'no-store',
   });
 
-  if (!res.ok) {
-    throw new Error('투자자 데이터 조회에 실패했습니다.');
-  }
+  if (!res.ok) throw new Error('투자자 데이터 조회에 실패했습니다.');
 
   const data = await res.json();
-  if (data.rt_cd !== '0') {
-    throw new Error(data.msg1 || 'API 오류가 발생했습니다.');
-  }
+  if (data.rt_cd !== '0') throw new Error(data.msg1 || 'API 오류가 발생했습니다.');
   
-  return data.output; // output contains the investor data list
+  return data.output;
+}
+
+export async function getStockOrderbook(stockCode: string) {
+  const token = await getAccessToken();
+  
+  const res = await fetch(`${DOMAIN}/uapi/domestic-stock/v1/quotations/inquire-asking-price-exp-ccn?FID_COND_MRKT_DIV_CODE=J&FID_INPUT_ISCD=${stockCode}`, {
+    method: 'GET',
+    headers: {
+      'Content-Type': 'application/json; charset=utf-8',
+      'authorization': `Bearer ${token}`,
+      'appkey': APP_KEY,
+      'appsecret': APP_SECRET,
+      'tr_id': 'FHKST01010200',
+    },
+    cache: 'no-store',
+  });
+
+  if (!res.ok) throw new Error('호가 데이터 조회에 실패했습니다.');
+
+  const data = await res.json();
+  if (data.rt_cd !== '0') throw new Error(data.msg1 || 'API 오류가 발생했습니다.');
+  
+  // output1 contains the 10-level ask/bid prices and quantities
+  return data.output1;
 }
