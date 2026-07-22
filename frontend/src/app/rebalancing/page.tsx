@@ -1,9 +1,12 @@
 "use client";
 
-import React from 'react';
+import React, { useState } from 'react';
 import Link from 'next/link';
+import RebalancingExecutionModal from '@/components/RebalancingExecutionModal';
 
 export default function RebalancingPage() {
+  const [isModalOpen, setIsModalOpen] = useState(false);
+
   return (
     <main className="max-w-[1400px] mx-auto px-8 py-10 w-full flex-grow">
       {/* TitleSection */}
@@ -88,7 +91,20 @@ export default function RebalancingPage() {
               </div>
             </div>
           </div>
+          <div className="flex justify-end mt-8">
+            <button 
+              onClick={() => setIsModalOpen(true)}
+              className="bg-[#3182f6] hover:bg-blue-600 text-white font-bold py-3 px-6 rounded-lg transition-colors shadow-sm"
+            >
+              리밸런싱하기
+            </button>
+          </div>
         </section>
+
+        <RebalancingExecutionModal 
+          isOpen={isModalOpen} 
+          onClose={() => setIsModalOpen(false)} 
+        />
 
         {/* Metrics Card */}
         <section className="bg-white p-8 rounded-2xl shadow-sm border border-gray-100 flex flex-col">
