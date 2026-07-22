@@ -6,6 +6,7 @@ import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import AddStockModal from '@/components/AddStockModal';
 import StockIssueCard from '@/components/StockIssueCard';
+import BigKindsNewsList from '@/components/BigKindsNewsList';
 import type { StockIssuesApiResponse, StockIssuesState } from '@/lib/issues';
 import { HOLDINGS_STORAGE_KEY, INITIAL_HOLDINGS, parseStoredHoldings, type Holding } from '@/lib/portfolio';
 
@@ -297,6 +298,9 @@ export default function HomePage() {
                             </p>
                           </div>
                         )}
+                        <div className="px-lg pb-lg">
+                          <BigKindsNewsList stockName={holding.name} />
+                        </div>
                       </div>
                     </div>
                   </div>
