@@ -1,9 +1,18 @@
 "use client";
 
 import React, { useEffect } from 'react';
-import { signIn } from 'next-auth/react';
+import { signIn, useSession } from 'next-auth/react';
+import { useRouter } from 'next/navigation';
 
 export default function OnboardingPage() {
+  const { status } = useSession();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (status === 'authenticated') {
+      router.replace('/');
+    }
+  }, [status, router]);
   // Simple micro-interactions for buttons
   useEffect(() => {
     const buttons = document.querySelectorAll('button');

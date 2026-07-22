@@ -2,6 +2,8 @@
 
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useSession } from 'next-auth/react';
+import { useRouter } from 'next/navigation';
 import AddStockModal from '@/components/AddStockModal';
 import StockIssueCard from '@/components/StockIssueCard';
 import type { StockIssuesApiResponse, StockIssuesState } from '@/lib/issues';
@@ -54,6 +56,15 @@ function formatPortfolioValue(value: number) {
 }
 
 export default function HomePage() {
+  const { status } = useSession();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (status === 'unauthenticated') {
+      router.replace('/onboarding');
+    }
+  }, [status, router]);
+
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [expandedStock, setExpandedStock] = useState<string | null>('035420');
   const [holdings, setHoldings] = useState<Holding[]>(INITIAL_HOLDINGS);
