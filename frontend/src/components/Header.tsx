@@ -47,8 +47,8 @@ export default function Header() {
 
               {/* Hover Dropdown for Logout */}
               <div className="absolute right-0 top-12 mt-2 w-32 bg-white rounded-md shadow-lg py-1 border border-gray-100 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50">
-                <button
-                  onClick={() => signOut()}
+                <button 
+                  onClick={() => signOut({ callbackUrl: '/onboarding' })}
                   className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 hover:text-red-600 transition-colors"
                 >
                   로그아웃

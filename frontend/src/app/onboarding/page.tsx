@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect } from 'react';
-import Link from 'next/link';
+import { signIn } from 'next-auth/react';
 
 export default function OnboardingPage() {
   // Simple micro-interactions for buttons
@@ -87,10 +87,10 @@ export default function OnboardingPage() {
                 투자 위험을 객관적으로 관리하고 의사결정의 확신을 더하세요.
               </p>
               <div className="flex flex-col sm:flex-row gap-sm">
-                <Link href="/" className="bg-primary text-on-primary px-lg py-md rounded-xl font-headline-sm shadow-xl shadow-primary/20 hover:shadow-2xl hover:shadow-primary/30 transition-all flex items-center justify-center gap-xs font-semibold">
+                <button onClick={() => signIn('google', { callbackUrl: '/' })} className="bg-primary text-on-primary px-lg py-md rounded-xl font-headline-sm shadow-xl shadow-primary/20 hover:shadow-2xl hover:shadow-primary/30 transition-all flex items-center justify-center gap-xs font-semibold">
                   서비스 시작하기
                   <span className="material-symbols-outlined">arrow_forward</span>
-                </Link>
+                </button>
                 <button className="bg-white border border-outline-variant text-on-surface px-lg py-md rounded-xl font-headline-sm hover:bg-surface-container-low transition-colors font-semibold">
                   데모 보기
                 </button>
@@ -156,9 +156,9 @@ export default function OnboardingPage() {
                 <p className="font-body-md text-[14px] text-white/70 max-w-[500px] mb-lg break-keep">
                   실시간 데이터 동기화를 통해 당신의 자산이 직면한 잠재적 위험 요소를 즉시 진단합니다.
                 </p>
-                <Link href="/" className="bg-white text-primary px-lg py-md rounded-xl font-headline-sm font-semibold hover:bg-surface-bright transition-colors shadow-lg">
+                <button onClick={() => signIn('google', { callbackUrl: '/' })} className="bg-white text-primary px-lg py-md rounded-xl font-headline-sm font-semibold hover:bg-surface-bright transition-colors shadow-lg">
                   로그인하여 분석 시작
-                </Link>
+                </button>
               </div>
 
               {/* Example Dashboard Preview (Simulated with Gradient/Cards) */}
