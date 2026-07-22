@@ -227,7 +227,15 @@ product  : 검증된 제품·사업과 직접 연결됨
 industry : 회사명은 없지만 산업 사건의 영향 대상임
 ```
 
-`article_companies`에는 `relation_type`, `confidence`, `evidence`를 저장한다. 모든 연결은 “왜 이 종목의 기사인지” 설명할 수 있어야 한다.
+관련도 v2는 회사명·검색 주제 위치를 가점하고 증시 종목 나열, 채용, 판촉, 수상, 혼합 뉴스 모음을 감점한다.
+
+```text
+eligible  confidence >= 0.65, BERTopic 입력
+candidate 0.45 <= confidence < 0.65, 검토·통계용
+rejected  confidence < 0.45, 분석 입력 제외
+```
+
+`article_companies`에는 실제 서비스 연결인 `eligible`만 저장하고, 전체 판정은 별도 relevance 산출물에 `relation_type`, `confidence`, `status`, `evidence`, `rule_version`과 함께 보존한다. 모든 연결은 “왜 이 종목의 기사인지” 설명할 수 있어야 한다.
 
 ## 8. 증분 수집 주기
 
@@ -378,7 +386,7 @@ Colab은 운영 스케줄러가 아니라 재현 가능한 학습·실험 환경
 
 산출물에는 dataset version, model version, preprocessing version, random seed, package version, 평가 지표, 오류 샘플, 생성 시각을 포함한다.
 
-BERTopic, SentenceTransformer, pgvector는 초기 필수 요소가 아니다. 규칙 기반 파이프라인의 자동 품질 지표와 시간 구간별 기준선을 만든 후 모델이 실제 성능을 개선할 때만 추가한다.
+BERTopic과 SentenceTransformer는 관련도 v2를 통과한 기사에만 적용하는 오프라인 Topic·Event 실험 단계에서 추가한다. 초기 뉴스 수집과 관련도 판정의 필수 요소로 두지 않는다. pgvector는 과거 Event 임베딩 검색이 실제로 필요해질 때 별도 도입한다.
 
 ## 13. 관측성과 장애 처리
 

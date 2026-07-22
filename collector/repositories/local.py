@@ -118,6 +118,13 @@ def write_json_atomic(path: Path, payload: Any) -> None:
     _atomic_write_text(path, json.dumps(payload, ensure_ascii=False, indent=2))
 
 
+def write_jsonl_atomic(path: Path, rows: Iterable[dict[str, Any]]) -> None:
+    content = "".join(
+        f"{json.dumps(row, ensure_ascii=False)}\n" for row in rows
+    )
+    _atomic_write_text(path, content)
+
+
 def merge_jsonl(
     path: Path,
     rows: Iterable[dict[str, Any]],

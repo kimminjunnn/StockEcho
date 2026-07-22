@@ -4,7 +4,6 @@ import unittest
 
 from collector.companies import get_company
 from collector.domain.search import QueryCompanyLink, SearchQuery
-from collector.jobs.collect_news_query import _query_presence
 from collector.normalize.news import normalize_item
 from collector.query.keywords import KiwiKeywordExtractor
 from collector.query.planner import build_query_plan
@@ -67,11 +66,16 @@ class KeywordDiscoveryTest(unittest.TestCase):
 
     def test_ambiguous_group_alias_is_not_enough_for_company_link(self) -> None:
         ambiguous = article(9, "one.example", "삼성 로봇 사업 확대")
-        confidence, evidence = _query_presence(
-            ambiguous, "삼성전자 로봇", self.company
+        from collector.relevance.rules import classify_relevance
+
+        result = classify_relevance(
+            ambiguous,
+            self.company,
+            query_text="삼성전자 로봇",
+            query_type="product",
         )
-        self.assertEqual(confidence, 0.2)
-        self.assertEqual(evidence, "missing_company_or_topic_context")
+        self.assertEqual(result.status, "rejected")
+        self.assertEqual(result.relation_type, "irrelevant")
 
 
 class JsonlRepositoryTest(unittest.TestCase):

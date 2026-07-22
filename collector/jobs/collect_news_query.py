@@ -44,23 +44,6 @@ def load_source(name: str) -> NewsSource:
     return NaverNewsSource(NaverNewsClient(NaverCredentials(client_id, client_secret)))
 
 
-def _query_presence(article, query_text: str, company) -> tuple[float, str]:
-    query_folded = query_text.casefold()
-    company_name = company.name.casefold()
-    topic = query_folded.removeprefix(company_name).strip() or query_folded
-    title = article.title.casefold()
-    summary = article.summary.casefold()
-    full_text = f"{title} {summary}"
-    # '삼성'처럼 계열사 전반에 걸친 별칭은 연결 근거로 쓰지 않는다.
-    company_mentioned = company_name in full_text
-    topic_mentioned = topic in full_text
-    if company_mentioned and topic in title:
-        return 0.95, "company_and_topic_in_title"
-    if company_mentioned and topic_mentioned:
-        return 0.8, "company_and_topic_in_article"
-    return 0.2, "missing_company_or_topic_context"
-
-
 def run(
     *,
     query: SearchQuery,
@@ -114,33 +97,35 @@ def run(
         for article in new_articles
     ]
     company_rows = []
+    relevance_rows = []
     for article in new_articles:
         for link in query.company_links:
             company = get_company(link.stock_code)
-            if query.query_type == "company":
-                relevance = classify_relevance(article, company)
-                confidence = relevance.confidence
-                relation_type = relevance.relation_type
-                evidence = list(relevance.evidence)
-            else:
-                presence, presence_evidence = _query_presence(article, query.text, company)
-                confidence = round(link.weight * presence, 4)
-                relation_type = "product" if query.query_type == "product" else "industry"
-                evidence = [presence_evidence, *link.evidence]
-            if relation_type == "irrelevant" or confidence < 0.45:
-                continue
-            company_rows.append(
-                {
-                    "document_id": article.document_id,
-                    "stock_code": company.stock_code,
-                    "company_name": company.name,
-                    "query_id": query.query_id,
-                    "relation_type": relation_type,
-                    "confidence": confidence,
-                    "evidence": evidence,
-                    "collected_at": collected_at.isoformat(),
-                }
+            relevance = classify_relevance(
+                article,
+                company,
+                query_text=query.text,
+                query_type=query.query_type,
+                link_weight=link.weight,
             )
+            assessment = {
+                "document_id": article.document_id,
+                "stock_code": company.stock_code,
+                "company_name": company.name,
+                "query_id": query.query_id,
+                "query_text": query.text,
+                "query_type": query.query_type,
+                "relation_type": relevance.relation_type,
+                "confidence": relevance.confidence,
+                "status": relevance.status,
+                "evidence": [*relevance.evidence, *link.evidence],
+                "rule_version": relevance.rule_version,
+                "evaluated_at": collected_at.isoformat(),
+            }
+            relevance_rows.append(assessment)
+            if relevance.status != "eligible":
+                continue
+            company_rows.append({**assessment, "collected_at": collected_at.isoformat()})
 
     processed_root = PROJECT_ROOT / "data" / "processed" / "news"
     articles_added = merge_jsonl(
@@ -155,6 +140,11 @@ def run(
         processed_root / "article_companies.jsonl",
         company_rows,
         key_fields=("document_id", "stock_code", "query_id"),
+    )
+    relevance_rows_added = merge_jsonl(
+        processed_root / "article_relevance.jsonl",
+        relevance_rows,
+        key_fields=("document_id", "stock_code", "query_id", "rule_version"),
     )
     merge_jsonl(
         PROJECT_ROOT / "data" / "processed" / "queries" / "registry.jsonl",
@@ -174,6 +164,7 @@ def run(
         "articles_added": articles_added,
         "query_links_added": query_links_added,
         "company_links_added": company_links_added,
+        "relevance_rows_added": relevance_rows_added,
         "raw_path": str(raw_path.relative_to(PROJECT_ROOT)) if raw_path else None,
         "checkpoint_path": str(checkpoint_path.relative_to(PROJECT_ROOT)),
     }

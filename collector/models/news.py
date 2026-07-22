@@ -27,3 +27,5 @@ class RelevanceResult:
     relation_type: str
     confidence: float
     evidence: tuple[str, ...]
+    status: str = "eligible"
+    rule_version: str = "relevance-v2"

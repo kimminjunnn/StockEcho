@@ -17,6 +17,17 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
 def _load_company_articles(stock_code: str) -> list[dict]:
+    keyword_seed_path = (
+        PROJECT_ROOT
+        / "data"
+        / "processed"
+        / "keyword_seed"
+        / f"{stock_code}_articles.jsonl"
+    )
+    keyword_seed = read_jsonl(keyword_seed_path)
+    if keyword_seed:
+        return keyword_seed
+
     processed_root = PROJECT_ROOT / "data" / "processed" / "news"
     articles = {
         row["document_id"]: row for row in read_jsonl(processed_root / "articles.jsonl")
@@ -27,7 +38,10 @@ def _load_company_articles(stock_code: str) -> list[dict]:
         for row in links
         if row.get("stock_code") == stock_code
         and row.get("relation_type") == "direct"
-        and float(row.get("confidence", 0)) >= 0.9
+        and (
+            row.get("status") == "eligible"
+            or float(row.get("confidence", 0)) >= 0.9
+        )
     }
     selected = [articles[document_id] for document_id in ids if document_id in articles]
     if selected:
