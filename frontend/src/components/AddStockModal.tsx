@@ -1,23 +1,19 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from 'react';
+import type { Holding } from '@/lib/portfolio';
 
 interface AddStockModalProps {
   isOpen: boolean;
+  savedHoldings: Holding[];
   onClose: () => void;
-}
-
-interface Holding {
-  code: string;
-  name: string;
-  quantity: number;
-  currentPrice?: number;
-  isRisk: boolean;
+  onSave: (holdings: Holding[]) => void;
 }
 
 const STOCK_DICTIONARY = [
   { code: "005930", name: "삼성전자" },
   { code: "000660", name: "SK하이닉스" },
+  { code: "042700", name: "한미반도체" },
   { code: "005380", name: "현대차" },
   { code: "373220", name: "LG에너지솔루션" },
   { code: "207940", name: "삼성바이오로직스" },
@@ -38,21 +34,15 @@ const STOCK_DICTIONARY = [
   { code: "009150", name: "삼성전기" }
 ];
 
-const INITIAL_HOLDINGS: Holding[] = [
-  { code: '035420', name: '네이버', quantity: 336, isRisk: true },
-  { code: '4689.T', name: '라인', quantity: 1638, isRisk: true, currentPrice: 22791 },
-  { code: '005930', name: '삼성전자', quantity: 317, isRisk: false }
-];
-
-export default function AddStockModal({ isOpen, onClose }: AddStockModalProps) {
-  const [holdings, setHoldings] = useState<Holding[]>(INITIAL_HOLDINGS);
+export default function AddStockModal({ isOpen, savedHoldings, onClose, onSave }: AddStockModalProps) {
+  const [holdings, setHoldings] = useState<Holding[]>(() => savedHoldings.map((holding) => ({ ...holding })));
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedQuantity, setSelectedQuantity] = useState<number | ''>(0);
   
   // Search states
   const [searchResults, setSearchResults] = useState<{code: string, name: string}[]>([]);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
-  const [searchedData, setSearchedData] = useState<{code: string, name: string, price: number} | null>(null);
+  const [searchedData, setSearchedData] = useState<{code: string, name: string, price: number, changeRate?: number} | null>(null);
   const [isFetchingPrice, setIsFetchingPrice] = useState(false);
   
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -67,32 +57,6 @@ export default function AddStockModal({ isOpen, onClose }: AddStockModalProps) {
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
-
-  useEffect(() => {
-    if (!isOpen) return;
-    
-    // Fetch prices for domestic stocks when modal opens
-    const fetchPrices = async () => {
-      const updatedHoldings = await Promise.all(holdings.map(async (holding) => {
-        if (holding.code === '4689.T') return holding; // Mock for overseas
-        try {
-          const res = await fetch(`/api/stock/price/${holding.code}`);
-          if (res.ok) {
-            const data = await res.json();
-            if (data.success && data.data && data.data.stck_prpr) {
-              return { ...holding, currentPrice: parseInt(data.data.stck_prpr, 10) };
-            }
-          }
-        } catch (error) {
-          console.error(`Failed to fetch price for ${holding.code}:`, error);
-        }
-        return holding;
-      }));
-      setHoldings(updatedHoldings);
-    };
-
-    fetchPrices();
-  }, [isOpen]);
 
   // Handle Search Input Change
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -115,6 +79,7 @@ export default function AddStockModal({ isOpen, onClose }: AddStockModalProps) {
   const executeSearch = async (code: string, name: string) => {
     setIsDropdownOpen(false);
     setSearchQuery(name);
+    setSearchedData(null);
     setIsFetchingPrice(true);
     
     try {
@@ -122,10 +87,12 @@ export default function AddStockModal({ isOpen, onClose }: AddStockModalProps) {
       if (res.ok) {
         const data = await res.json();
         if (data.success && data.data && data.data.stck_prpr) {
+          const changeRate = Number(data.data.prdy_ctrt);
           setSearchedData({
             code,
             name,
-            price: parseInt(data.data.stck_prpr, 10)
+            price: parseInt(data.data.stck_prpr, 10),
+            changeRate: Number.isFinite(changeRate) ? changeRate : undefined,
           });
         }
       }
@@ -145,22 +112,27 @@ export default function AddStockModal({ isOpen, onClose }: AddStockModalProps) {
   if (!isOpen) return null;
 
   const totalValuation = holdings.reduce((sum, h) => sum + (h.currentPrice || 0) * h.quantity, 0);
-  const riskCount = holdings.filter(h => h.isRisk).length;
+  const totalQuantity = holdings.reduce((sum, holding) => sum + holding.quantity, 0);
 
   const handleAdd = () => {
     if (!searchQuery) return;
     const qty = selectedQuantity === '' ? 0 : selectedQuantity;
     if (qty <= 0) return;
 
-    const existingIndex = holdings.findIndex(h => h.name.includes(searchQuery) || h.code === searchQuery);
+    const existingIndex = holdings.findIndex((holding) =>
+      searchedData
+        ? holding.code === searchedData.code
+        : holding.name === searchQuery || holding.code === searchQuery
+    );
     
     // If it exists in holdings, update quantity
     if (existingIndex >= 0) {
-      const newHoldings = [...holdings];
+      const newHoldings = holdings.map((holding) => ({ ...holding }));
       newHoldings[existingIndex].quantity += qty;
       // If we searched for it and got a fresh price, update it
       if (searchedData && (searchedData.name === newHoldings[existingIndex].name || searchedData.code === newHoldings[existingIndex].code)) {
         newHoldings[existingIndex].currentPrice = searchedData.price;
+        newHoldings[existingIndex].changeRate = searchedData.changeRate;
       }
       setHoldings(newHoldings);
     } else {
@@ -170,7 +142,8 @@ export default function AddStockModal({ isOpen, onClose }: AddStockModalProps) {
         name: searchedData ? searchedData.name : searchQuery,
         quantity: qty,
         currentPrice: searchedData ? searchedData.price : 0,
-        isRisk: false // Default to false for new MVP items
+        changeRate: searchedData?.changeRate,
+        riskLevel: 'pending',
       }]);
     }
     
@@ -183,9 +156,13 @@ export default function AddStockModal({ isOpen, onClose }: AddStockModalProps) {
     if (!searchQuery) return;
     
     const qty = selectedQuantity === '' ? 0 : selectedQuantity;
-    const existingIndex = holdings.findIndex(h => h.name.includes(searchQuery) || h.code === searchQuery);
+    const existingIndex = holdings.findIndex((holding) =>
+      searchedData
+        ? holding.code === searchedData.code
+        : holding.name === searchQuery || holding.code === searchQuery
+    );
     if (existingIndex >= 0) {
-      const newHoldings = [...holdings];
+      const newHoldings = holdings.map((holding) => ({ ...holding }));
       if (newHoldings[existingIndex].quantity <= qty || qty === 0) {
         newHoldings.splice(existingIndex, 1);
       } else {
@@ -231,8 +208,8 @@ export default function AddStockModal({ isOpen, onClose }: AddStockModalProps) {
               <p className="font-headline-md text-headline-md text-on-surface">{holdings.length}개</p>
             </div>
             <div className="space-y-xs">
-              <p className="font-body-sm text-on-surface-variant text-error">위험 종목</p>
-              <p className="font-headline-md text-headline-md text-error">{riskCount}개</p>
+              <p className="font-body-sm text-on-surface-variant">총 보유 수량</p>
+              <p className="font-headline-md text-headline-md text-on-surface">{formatNumber(totalQuantity)}주</p>
             </div>
           </section>
 
@@ -250,8 +227,8 @@ export default function AddStockModal({ isOpen, onClose }: AddStockModalProps) {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-surface-variant">
-                    {holdings.map((h, i) => (
-                      <tr key={i} className="hover:bg-surface-container transition-colors group cursor-pointer" onClick={() => { setSearchQuery(h.name); setSelectedQuantity(h.quantity); setSearchedData(null); }}>
+                    {holdings.map((h) => (
+                      <tr key={h.code} className="hover:bg-surface-container transition-colors group cursor-pointer" onClick={() => { setSearchQuery(h.name); setSelectedQuantity(h.quantity); setSearchedData({ code: h.code, name: h.name, price: h.currentPrice || 0, changeRate: h.changeRate }); }}>
                         <td className="py-lg px-md font-body-md text-on-surface font-semibold">{h.name}</td>
                         <td className="py-lg px-md font-body-md text-on-surface text-right">{formatNumber(h.quantity)}주</td>
                         <td className="py-lg px-md font-body-md text-on-surface text-right">₩{formatNumber(h.currentPrice || 0)}</td>
@@ -363,7 +340,7 @@ export default function AddStockModal({ isOpen, onClose }: AddStockModalProps) {
 
         <footer className="px-xl py-lg bg-surface-container border-t border-surface-variant flex justify-end gap-md">
           <button onClick={onClose} className="px-xl py-md text-on-surface-variant font-body-md font-semibold hover:bg-surface-container-highest rounded-lg transition-colors">닫기</button>
-          <button onClick={onClose} className="px-xl py-md bg-secondary text-on-secondary rounded-lg font-body-md font-bold hover:shadow-lg transition-all active:translate-y-px">수정 사항 저장</button>
+          <button onClick={() => onSave(holdings)} className="px-xl py-md bg-secondary text-on-secondary rounded-lg font-body-md font-bold hover:shadow-lg transition-all active:translate-y-px">수정 사항 저장</button>
         </footer>
       </div>
     </div>

@@ -87,13 +87,18 @@ body {
   color: var(--color-on-background);
 }
 .expandable-content {
-  max-height: 0;
+  display: grid;
+  grid-template-rows: 0fr;
   overflow: hidden;
-  transition: max-height 0.3s ease-out, opacity 0.2s ease-in;
+  transition: grid-template-rows 0.3s ease-out, opacity 0.2s ease-in;
   opacity: 0;
 }
+.expandable-content > .expandable-inner {
+  min-height: 0;
+  overflow: hidden;
+}
 .expanded .expandable-content {
-  max-height: 500px;
+  grid-template-rows: 1fr;
   opacity: 1;
 }
 .expanded .expand-icon {

@@ -1,15 +1,173 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import AddStockModal from '@/components/AddStockModal';
-import IssueAnalysisModal from '@/components/IssueAnalysisModal';
+import StockIssueCard from '@/components/StockIssueCard';
+import type { StockIssuesApiResponse, StockIssuesState } from '@/lib/issues';
+import { HOLDINGS_STORAGE_KEY, INITIAL_HOLDINGS, parseStoredHoldings, type Holding } from '@/lib/portfolio';
+
+const ALLOCATION_COLORS = ['#0059b9', '#2d6fe5', '#acc7ff'];
+
+function analysisPresentation(state: StockIssuesState | undefined, isDomestic: boolean) {
+  if (!isDomestic) {
+    return { label: '지원 대상 아님', className: 'bg-surface-container-highest text-outline' };
+  }
+  if (!state || state.status === 'loading') {
+    return { label: '분석 중', className: 'bg-primary-fixed text-on-primary-fixed-variant' };
+  }
+  if (state.status === 'ready') {
+    return { label: `주요 이슈 ${state.data.issues.length}건`, className: 'bg-primary-fixed text-on-primary-fixed-variant' };
+  }
+  if (state.status === 'error') {
+    return { label: '조회 실패', className: 'bg-error-container text-on-error-container' };
+  }
+  return { label: '분석 데이터 없음', className: 'bg-surface-container-highest text-on-surface-variant' };
+}
+
+function formatCurrentPrice(holding: Holding) {
+  const price = holding.currentPrice || 0;
+  if (holding.code.endsWith('.T')) {
+    return `${price.toLocaleString('ko-KR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} JPY`;
+  }
+  return `${price.toLocaleString('ko-KR')}원`;
+}
+
+function formatChangeRate(changeRate?: number) {
+  if (changeRate === undefined) return '—';
+  const sign = changeRate > 0 ? '+' : '';
+  return `${sign}${changeRate.toFixed(2)}%`;
+}
+
+function getChangeRateClass(changeRate?: number) {
+  if (changeRate === undefined || changeRate === 0) return 'text-outline';
+  return changeRate > 0 ? 'text-chart-up' : 'text-chart-down';
+}
+
+function formatPortfolioValue(value: number) {
+  if (value >= 100_000_000) {
+    const eok = Math.floor(value / 100_000_000);
+    const man = Math.floor((value % 100_000_000) / 10_000);
+    return man > 0 ? `${eok.toLocaleString('ko-KR')}억 ${man.toLocaleString('ko-KR')}만원` : `${eok.toLocaleString('ko-KR')}억원`;
+  }
+  return `${Math.floor(value).toLocaleString('ko-KR')}원`;
+}
 
 export default function HomePage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [isIssueModalOpen, setIsIssueModalOpen] = useState(false);
-  const [selectedIssueStock, setSelectedIssueStock] = useState("035420");
-  const [expandedStock, setExpandedStock] = useState<string | null>('naver');
+  const [expandedStock, setExpandedStock] = useState<string | null>('035420');
+  const [holdings, setHoldings] = useState<Holding[]>(INITIAL_HOLDINGS);
+  const [storageReady, setStorageReady] = useState(false);
+  const [issuesByCode, setIssuesByCode] = useState<Record<string, StockIssuesState>>({});
+  const marketCodes = holdings
+    .filter((holding) => /^\d{6}$/.test(holding.code))
+    .map((holding) => holding.code)
+    .join(',');
+  const missingMarketCodes = holdings
+    .filter((holding) => /^\d{6}$/.test(holding.code) && holding.changeRate === undefined)
+    .map((holding) => holding.code)
+    .join(',');
+
+  useEffect(() => {
+    let active = true;
+    Promise.resolve().then(() => {
+      if (!active) return;
+      const stored = parseStoredHoldings(window.localStorage.getItem(HOLDINGS_STORAGE_KEY));
+      if (stored) setHoldings(stored);
+      setStorageReady(true);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!storageReady) return;
+    window.localStorage.setItem(HOLDINGS_STORAGE_KEY, JSON.stringify(holdings));
+  }, [holdings, storageReady]);
+
+  useEffect(() => {
+    if (!missingMarketCodes) return;
+
+    const abortController = new AbortController();
+
+    const refreshMarketData = async () => {
+      const updates = new Map<string, { currentPrice: number; changeRate: number }>();
+
+      // KIS token issuance is rate-limited, so request holdings sequentially.
+      for (const code of missingMarketCodes.split(',')) {
+        try {
+          const response = await fetch(`/api/stock/price/${code}`, { signal: abortController.signal });
+          if (!response.ok) continue;
+
+          const result = await response.json();
+          const currentPrice = Number(result.data?.stck_prpr);
+          const changeRate = Number(result.data?.prdy_ctrt);
+          if (result.success && Number.isFinite(currentPrice) && Number.isFinite(changeRate)) {
+            updates.set(code, { currentPrice, changeRate });
+          }
+        } catch (error) {
+          if (abortController.signal.aborted) return;
+          console.error(`Failed to refresh market data for ${code}:`, error);
+        }
+      }
+
+      if (abortController.signal.aborted || updates.size === 0) return;
+      setHoldings((currentHoldings) => currentHoldings.map((holding) => {
+        const update = updates.get(holding.code);
+        return update ? { ...holding, ...update } : holding;
+      }));
+    };
+
+    refreshMarketData();
+    return () => abortController.abort();
+  }, [missingMarketCodes]);
+
+  useEffect(() => {
+    if (!marketCodes) return;
+
+    const codes = marketCodes.split(',');
+    const abortController = new AbortController();
+
+    const refreshIssues = async () => {
+      const entries = await Promise.all(codes.map(async (code): Promise<[string, StockIssuesState]> => {
+        try {
+          const response = await fetch(`/api/stocks/${code}/issues`, {
+            signal: abortController.signal,
+          });
+          if (!response.ok) return [code, { status: 'error', data: null }];
+          const payload = await response.json() as StockIssuesApiResponse;
+          if (!payload.success) return [code, { status: 'error', data: null }];
+          if (!payload.data) return [code, { status: 'empty', data: null }];
+          return [code, { status: 'ready', data: payload.data }];
+        } catch {
+          return [code, { status: 'error', data: null }];
+        }
+      }));
+
+      if (!abortController.signal.aborted) {
+        setIssuesByCode(Object.fromEntries(entries));
+      }
+    };
+
+    refreshIssues();
+    return () => abortController.abort();
+  }, [marketCodes]);
+
+  const totalValuation = holdings.reduce((sum, holding) => sum + (holding.currentPrice || 0) * holding.quantity, 0);
+  const analyzedHoldings = holdings.filter((holding) => issuesByCode[holding.code]?.status === 'ready');
+  const allocationBase = [...holdings]
+    .sort((a, b) => (b.currentPrice || 0) * b.quantity - (a.currentPrice || 0) * a.quantity)
+    .slice(0, 3)
+    .map((holding, index) => {
+      const value = (holding.currentPrice || 0) * holding.quantity;
+      const percentage = totalValuation > 0 ? (value / totalValuation) * 100 : 0;
+      return { holding, percentage, color: ALLOCATION_COLORS[index] };
+    });
+  const allocationItems = allocationBase.map((item, index) => ({
+    ...item,
+    offset: allocationBase.slice(0, index).reduce((sum, previousItem) => sum + previousItem.percentage, 0),
+  }));
 
   const toggleExpand = (stockId: string) => {
     setExpandedStock(prev => prev === stockId ? null : stockId);
@@ -47,126 +205,92 @@ export default function HomePage() {
             {/* Stock List Items */}
             <div className="space-y-md">
               
-              {/* Item 1: NAVER */}
-              <div className={`bg-surface border border-outline-variant rounded-2xl transition-all hover:border-primary group ${expandedStock === 'naver' ? 'expanded' : ''}`}>
-                <div className="grid grid-cols-12 items-center px-lg py-lg cursor-pointer" onClick={() => toggleExpand('naver')}>
-                  <div className="col-span-4 flex items-center gap-md">
-                    <div className="h-10 w-10 rounded-lg bg-surface-container-low flex items-center justify-center font-bold text-primary">N</div>
-                    <div>
-                      <Link href={`/stock/035420`} className="hover:underline">
-                        <h3 className="font-title-sm text-md font-bold">NAVER</h3>
-                      </Link>
-                      <span className="text-xs text-outline font-body-sm">035420</span>
-                    </div>
-                  </div>
-                  <div className="col-span-3 text-right font-title-sm text-sm font-bold">185,200원</div>
-                  <div className="col-span-2 text-right font-title-sm text-sm text-error">-1.2%</div>
-                  <div className="col-span-3 flex justify-end items-center gap-md">
-                    <span className="bg-error-container text-on-error-container text-[11px] font-bold px-sm py-xs rounded-lg uppercase tracking-wider">핵심 위험</span>
-                    <span className="material-symbols-outlined text-outline transition-transform expand-icon">expand_more</span>
-                  </div>
+              {holdings.length === 0 && (
+                <div className="rounded-2xl border border-dashed border-outline-variant bg-surface py-2xl text-center text-sm text-outline">
+                  보유 중인 종목이 없습니다. 종목 편집하기에서 추가해 주세요.
                 </div>
-                
-                <div className="expandable-content border-t border-outline-variant bg-surface-container-low rounded-b-2xl">
-                  <div className="p-lg">
-                    <div className="flex justify-between items-center mb-md">
-                      <h4 className="font-title-sm text-sm font-bold text-on-surface">분석된 주요 이슈</h4>
-                    </div>
-                    <div className="space-y-sm">
-                      <div className="bg-surface p-md rounded-xl border border-outline-variant flex justify-between items-center">
-                        <div className="flex items-center gap-lg">
-                          <span className="text-xs font-bold text-outline w-20">노동 분쟁</span>
-                          <span className="text-sm font-bold">노조 파업 선언</span>
-                        </div>
-                        <div className="flex items-center gap-xl">
-                          <span className="text-xs text-outline">2024.05.20</span>
-                          <span className="text-xs font-bold text-error">High Risk</span>
-                        </div>
-                        <button onClick={() => { setSelectedIssueStock("035420"); setIsIssueModalOpen(true); }} className="text-primary font-label-caps text-[11px] flex items-center gap-xs hover:underline ml-md">
-                          연관 과거 이슈 보기
-                          <span className="material-symbols-outlined text-[14px]">arrow_forward</span>
-                        </button>
-                      </div>
-                      <div className="bg-surface p-md rounded-xl border border-outline-variant flex justify-between items-center">
-                        <div className="flex items-center gap-lg">
-                          <span className="text-xs font-bold text-outline w-20">규제 리스크</span>
-                          <span className="text-sm font-bold">공정위 플랫폼법 조사</span>
-                        </div>
-                        <div className="flex items-center gap-xl">
-                          <span className="text-xs text-outline">2024.05.18</span>
-                          <span className="text-xs font-bold text-tertiary">Medium</span>
-                        </div>
-                        <button onClick={() => { setSelectedIssueStock("035420"); setIsIssueModalOpen(true); }} className="text-primary font-label-caps text-[11px] flex items-center gap-xs hover:underline ml-md">
-                          연관 과거 이슈 보기
-                          <span className="material-symbols-outlined text-[14px]">arrow_forward</span>
-                        </button>
-                      </div>
-                      <div className="bg-surface p-md rounded-xl border border-outline-variant flex justify-between items-center">
-                        <div className="flex items-center gap-lg">
-                          <span className="text-xs font-bold text-outline w-20">수익성</span>
-                          <span className="text-sm font-bold">광고 부문 성장 둔화 우려</span>
-                        </div>
-                        <div className="flex items-center gap-xl">
-                          <span className="text-xs text-outline">2024.05.15</span>
-                          <span className="text-xs font-bold text-tertiary">Medium</span>
-                        </div>
-                        <button onClick={() => { setSelectedIssueStock("035420"); setIsIssueModalOpen(true); }} className="text-primary font-label-caps text-[11px] flex items-center gap-xs hover:underline ml-md">
-                          연관 과거 이슈 보기
-                          <span className="material-symbols-outlined text-[14px]">arrow_forward</span>
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
+              )}
 
-              {/* Item 2: 라인 */}
-              <div className={`bg-surface border border-outline-variant rounded-2xl transition-all hover:border-primary group ${expandedStock === 'line' ? 'expanded' : ''}`}>
-                <div className="grid grid-cols-12 items-center px-lg py-lg cursor-pointer" onClick={() => toggleExpand('line')}>
-                  <div className="col-span-4 flex items-center gap-md">
-                    <div className="h-10 w-10 rounded-lg bg-[#00C300]/10 flex items-center justify-center font-bold text-[#00C300]">L</div>
-                    <div>
-                      <Link href={`/stock/4689`} className="hover:underline">
-                        <h3 className="font-title-sm text-md font-bold">라인 (LYCorp)</h3>
-                      </Link>
-                      <span className="text-xs text-outline font-body-sm">4689.T</span>
-                    </div>
-                  </div>
-                  <div className="col-span-3 text-right font-title-sm text-sm font-bold">2,450.50 JPY</div>
-                  <div className="col-span-2 text-right font-title-sm text-sm text-[#00C300]">+0.8%</div>
-                  <div className="col-span-3 flex justify-end items-center gap-md">
-                    <span className="bg-tertiary-fixed text-on-tertiary-fixed-variant text-[11px] font-bold px-sm py-xs rounded-lg uppercase tracking-wider">주의</span>
-                    <span className="material-symbols-outlined text-outline transition-transform expand-icon">expand_more</span>
-                  </div>
-                </div>
-                <div className="expandable-content border-t border-outline-variant bg-surface-container-low rounded-b-2xl">
-                  <div className="p-lg text-center text-outline font-body-sm">이슈 상세 정보를 불러오는 중입니다...</div>
-                </div>
-              </div>
+              {holdings.map((holding) => {
+                const isDomestic = /^\d{6}$/.test(holding.code);
+                const issueState = issuesByCode[holding.code];
+                const presentation = analysisPresentation(issueState, isDomestic);
 
-              {/* Item 3: 삼성전자 */}
-              <div className={`bg-surface border border-outline-variant rounded-2xl transition-all hover:border-primary group ${expandedStock === 'samsung' ? 'expanded' : ''}`}>
-                <div className="grid grid-cols-12 items-center px-lg py-lg cursor-pointer" onClick={() => toggleExpand('samsung')}>
-                  <div className="col-span-4 flex items-center gap-md">
-                    <div className="h-10 w-10 rounded-lg bg-secondary-container flex items-center justify-center font-bold text-white">S</div>
-                    <div>
-                      <Link href={`/stock/005930`} className="hover:underline">
-                        <h3 className="font-title-sm text-md font-bold">삼성전자</h3>
-                      </Link>
-                      <span className="text-xs text-outline font-body-sm">005930</span>
+                return (
+                  <div key={holding.code} className={`bg-surface border border-outline-variant rounded-2xl transition-all hover:border-primary group ${expandedStock === holding.code ? 'expanded' : ''}`}>
+                    <div
+                      className="grid cursor-pointer grid-cols-12 items-center px-lg py-lg"
+                      onClick={() => toggleExpand(holding.code)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault();
+                          toggleExpand(holding.code);
+                        }
+                      }}
+                      role="button"
+                      tabIndex={0}
+                      aria-expanded={expandedStock === holding.code}
+                      aria-label={`${holding.name} 상세 ${expandedStock === holding.code ? '접기' : '펼치기'}`}
+                    >
+                      <div className="col-span-4 flex items-center gap-md">
+                        <div className="h-10 w-10 rounded-lg bg-surface-container-low flex items-center justify-center font-bold text-primary">
+                          {holding.name.charAt(0).toUpperCase()}
+                        </div>
+                        <div>
+                          {isDomestic ? (
+                            <Link
+                              href={`/stock/${holding.code}`}
+                              onClick={(event) => event.stopPropagation()}
+                              onKeyDown={(event) => event.stopPropagation()}
+                              className="hover:underline"
+                            >
+                              <h3 className="font-title-sm text-md font-bold">{holding.name}</h3>
+                            </Link>
+                          ) : (
+                            <h3 className="font-title-sm text-md font-bold">{holding.name}</h3>
+                          )}
+                          <span className="text-xs text-outline font-body-sm">{holding.code}</span>
+                        </div>
+                      </div>
+                      <div className="col-span-3 text-right font-title-sm text-sm font-bold">{formatCurrentPrice(holding)}</div>
+                      <div className={`col-span-2 text-right font-title-sm text-sm ${getChangeRateClass(holding.changeRate)}`}>{formatChangeRate(holding.changeRate)}</div>
+                      <div className="col-span-3 flex justify-end items-center gap-md">
+                        <span className={`${presentation.className} text-[11px] font-bold px-sm py-xs rounded-lg tracking-wider`}>{presentation.label}</span>
+                        <span className="material-symbols-outlined text-outline transition-transform expand-icon">expand_more</span>
+                      </div>
+                    </div>
+                    <div className="expandable-content border-t border-outline-variant bg-surface-container-low rounded-b-2xl">
+                      <div className="expandable-inner">
+                        {issueState?.status === 'ready' ? (
+                          <div className="p-lg">
+                            <div className="mb-md flex items-center justify-between gap-md">
+                              <h4 className="font-title-sm text-sm font-bold text-on-surface">분석된 주요 이슈</h4>
+                              <span className="text-[11px] text-outline">기준일 {issueState.data.asOf}</span>
+                            </div>
+                            <div className="space-y-sm">
+                              {issueState.data.issues.map((issue) => (
+                                <StockIssueCard key={issue.eventId} issue={issue} stockCode={holding.code} />
+                              ))}
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="p-lg">
+                            <p className="text-sm text-outline">
+                              {!isDomestic
+                                ? '현재 국내 KOSPI 지원 종목만 뉴스 분석을 제공합니다.'
+                                : issueState?.status === 'loading' || !issueState
+                                  ? '최신 이슈 분석 결과를 불러오는 중입니다.'
+                                  : issueState.status === 'error'
+                                    ? '이슈 결과를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.'
+                                    : '아직 이 종목의 검증된 이슈 분석 데이터가 없습니다.'}
+                            </p>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
-                  <div className="col-span-3 text-right font-title-sm text-sm font-bold">78,500원</div>
-                  <div className="col-span-2 text-right font-title-sm text-sm text-[#00C300]">+1.5%</div>
-                  <div className="col-span-3 flex justify-end items-center gap-md">
-                    <span className="bg-surface-container-highest text-on-surface-variant text-[11px] font-bold px-sm py-xs rounded-lg uppercase tracking-wider">양호</span>
-                    <span className="material-symbols-outlined text-outline transition-transform expand-icon">expand_more</span>
-                  </div>
-                </div>
-                <div className="expandable-content border-t border-outline-variant bg-surface-container-low rounded-b-2xl">
-                  <div className="p-lg text-center text-outline font-body-sm">이슈 상세 정보를 불러오는 중입니다...</div>
-                </div>
-              </div>
+                );
+              })}
               
             </div>
           </div>
@@ -196,7 +320,7 @@ export default function HomePage() {
                   </div>
                   <div className="absolute top-md left-md flex flex-col">
                     <span className="font-label-caps text-[10px] text-outline">수익률 추이</span>
-                    <span className="font-title-sm text-sm font-bold text-[#00C300]">+12.4%</span>
+                    <span className="font-title-sm text-xs font-bold text-outline">가격 반응 분석 준비 중</span>
                   </div>
                 </div>
 
@@ -204,15 +328,17 @@ export default function HomePage() {
                 <div className="space-y-md mb-xl">
                   <div className="flex justify-between items-center py-xs border-b border-surface-container-high">
                     <span className="text-sm font-body-sm text-on-surface-variant">총 평가 금액</span>
-                    <span className="text-sm font-bold">1억 2,450만원</span>
+                    <span className="text-sm font-bold">{formatPortfolioValue(totalValuation)}</span>
                   </div>
                   <div className="flex justify-between items-center py-xs border-b border-surface-container-high">
                     <span className="text-sm font-body-sm text-on-surface-variant">보유 종목</span>
-                    <span className="text-sm font-bold">8개</span>
+                    <span className="text-sm font-bold">{holdings.length}개</span>
                   </div>
                   <div className="flex justify-between items-center py-xs">
-                    <span className="text-sm font-body-sm text-on-surface-variant">위험 종목</span>
-                    <span className="text-sm font-bold text-error">1개 (네이버)</span>
+                    <span className="text-sm font-body-sm text-on-surface-variant">이슈 분석 완료</span>
+                    <span className="text-sm font-bold text-primary">
+                      {analyzedHoldings.length}개{analyzedHoldings.length > 0 ? ` (${analyzedHoldings.map((holding) => holding.name).join(', ')})` : ''}
+                    </span>
                   </div>
                 </div>
 
@@ -226,36 +352,35 @@ export default function HomePage() {
                     <div className="relative w-24 h-24 flex-shrink-0">
                       <svg className="w-full h-full transform -rotate-90" viewBox="0 0 36 36">
                         <circle cx="18" cy="18" fill="none" r="16" stroke="#f2f3fd" strokeWidth="4"></circle>
-                        <circle cx="18" cy="18" fill="none" r="16" stroke="#0059b9" strokeDasharray="50 100" strokeDashoffset="0" strokeWidth="4"></circle>
-                        <circle cx="18" cy="18" fill="none" r="16" stroke="#2d6fe5" strokeDasharray="30 100" strokeDashoffset="-50" strokeWidth="4"></circle>
-                        <circle cx="18" cy="18" fill="none" r="16" stroke="#acc7ff" strokeDasharray="20 100" strokeDashoffset="-80" strokeWidth="4"></circle>
+                        {allocationItems.map(({ holding, percentage, offset, color }) => (
+                          <circle
+                            key={holding.code}
+                            cx="18"
+                            cy="18"
+                            fill="none"
+                            r="16"
+                            stroke={color}
+                            strokeDasharray={`${percentage} 100`}
+                            strokeDashoffset={-offset}
+                            strokeWidth="4"
+                          />
+                        ))}
                       </svg>
                       <div className="absolute inset-0 flex items-center justify-center">
                         <span className="text-[10px] font-bold text-outline">Allocation</span>
                       </div>
                     </div>
                     <div className="flex-grow space-y-xs">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-xs">
-                          <div className="h-2 w-2 rounded-full bg-[#0059b9]"></div>
-                          <span className="text-xs font-body-sm">삼성전자</span>
+                      {allocationItems.length === 0 && <span className="text-xs text-outline">데이터 없음</span>}
+                      {allocationItems.map(({ holding, percentage, color }) => (
+                        <div key={holding.code} className="flex items-center justify-between">
+                          <div className="flex min-w-0 items-center gap-xs">
+                            <div className="h-2 w-2 flex-shrink-0 rounded-full" style={{ backgroundColor: color }}></div>
+                            <span className="truncate text-xs font-body-sm">{holding.name}</span>
+                          </div>
+                          <span className="text-xs font-bold">{Math.round(percentage)}%</span>
                         </div>
-                        <span className="text-xs font-bold">50%</span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-xs">
-                          <div className="h-2 w-2 rounded-full bg-[#2d6fe5]"></div>
-                          <span className="text-xs font-body-sm">라인</span>
-                        </div>
-                        <span className="text-xs font-bold">30%</span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-xs">
-                          <div className="h-2 w-2 rounded-full bg-[#acc7ff]"></div>
-                          <span className="text-xs font-body-sm">네이버</span>
-                        </div>
-                        <span className="text-xs font-bold">20%</span>
-                      </div>
+                      ))}
                     </div>
                   </div>
                 </div>
@@ -268,8 +393,17 @@ export default function HomePage() {
           </div>
         </div>
       </main>
-      <AddStockModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} />
-      <IssueAnalysisModal isOpen={isIssueModalOpen} onClose={() => setIsIssueModalOpen(false)} stockCode={selectedIssueStock} />
+      {isModalOpen && (
+        <AddStockModal
+          isOpen
+          savedHoldings={holdings}
+          onClose={() => setIsModalOpen(false)}
+          onSave={(nextHoldings) => {
+            setHoldings(nextHoldings);
+            setIsModalOpen(false);
+          }}
+        />
+      )}
     </>
   );
 }
