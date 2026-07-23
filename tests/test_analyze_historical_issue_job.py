@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from collector.jobs.analyze_historical_issue import _failure_payload
+from collector.jobs.analyze_historical_issue import _failure_payload, _json_output
 
 
 class HistoricalIssueJobFailureTests(unittest.TestCase):
@@ -33,6 +33,17 @@ class HistoricalIssueJobFailureTests(unittest.TestCase):
 
         self.assertEqual(payload["errorCode"], "analysis_failed")
         self.assertNotIn("password", payload["error"])
+
+    def test_json_output_is_safe_for_windows_cp949_console(self) -> None:
+        output = _json_output(
+            {
+                "success": True,
+                "data": {"title": "삼성전자⋯과거 유사 이슈"},
+            }
+        )
+
+        encoded = output.encode("cp949")
+        self.assertIn(b"\\u22ef", encoded)
 
 
 if __name__ == "__main__":

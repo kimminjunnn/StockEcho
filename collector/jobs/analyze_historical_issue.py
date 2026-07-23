@@ -36,6 +36,12 @@ def _failure_payload(error: Exception) -> dict[str, object]:
     }
 
 
+def _json_output(payload: dict[str, object]) -> str:
+    """Windows cp949 콘솔에서도 안전하게 전달되는 단일 행 JSON을 만든다."""
+
+    return json.dumps(payload, ensure_ascii=True)
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--stock-code", required=True)
@@ -63,9 +69,9 @@ def main() -> None:
             )
         )
     except Exception as error:
-        print(json.dumps(_failure_payload(error), ensure_ascii=False))
+        print(_json_output(_failure_payload(error)))
         raise SystemExit(1)
-    print(json.dumps({"success": True, "data": result}, ensure_ascii=False))
+    print(_json_output({"success": True, "data": result}))
 
 
 if __name__ == "__main__":

@@ -144,6 +144,14 @@ function stderrSummary(error: unknown, root: string): string {
   return stderr.slice(-800);
 }
 
+function collectorEnvironment(): NodeJS.ProcessEnv {
+  return {
+    ...process.env,
+    PYTHONIOENCODING: "utf-8",
+    PYTHONUTF8: "1",
+  };
+}
+
 async function resolveCollectorCommand(root: string): Promise<CollectorCommand> {
   if (cachedCollectorCommand?.repositoryRoot === root) {
     return cachedCollectorCommand.command;
@@ -165,7 +173,7 @@ async function resolveCollectorCommand(root: string): Promise<CollectorCommand> 
           cwd: root,
           timeout: 10_000,
           maxBuffer: 1024 * 1024,
-          env: process.env,
+          env: collectorEnvironment(),
           windowsHide: true,
         },
       );
@@ -328,7 +336,7 @@ export async function POST(
         cwd: root,
         timeout: 120_000,
         maxBuffer: 4 * 1024 * 1024,
-        env: process.env,
+        env: collectorEnvironment(),
         windowsHide: true,
       },
     );
