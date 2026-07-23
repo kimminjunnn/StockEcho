@@ -13,9 +13,10 @@ from urllib.parse import urlparse
 import psycopg
 from dotenv import load_dotenv
 from psycopg.types.json import Jsonb
+from psycopg.rows import dict_row
 
-from collector.companies import SUPPORTED_COMPANIES
-from collector.repositories.local import read_jsonl
+from collector.companies import SUPPORTED_COMPANIES, get_company
+from collector.repositories.local import read_jsonl, write_jsonl_atomic
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -186,6 +187,18 @@ def build_stock_result(stock_code: str) -> tuple[dict[str, Any], int]:
                 "selectionWindowDays": row["selection_window_days"],
                 "rank": row["rank"],
                 "score": row["score"],
+                "category": row.get("category", "사업·전략"),
+                "impact": row.get("impact", "unknown"),
+                "impactConfidence": float(row.get("impact_confidence", 0)),
+                "impactHorizon": row.get("impact_horizon", "unclear"),
+                "impactReason": row.get("impact_reason", ""),
+                "impactEvidenceDocumentIds": row.get(
+                    "impact_evidence_document_ids", []
+                ),
+                "classificationMethod": row.get(
+                    "classification_method", "rule-fallback-v1"
+                ),
+                "classificationModel": row.get("classification_model", ""),
                 "representativeArticle": articles[0],
                 "articles": articles,
             }
@@ -333,6 +346,106 @@ def sync_stock_news(stock_code: str) -> dict[str, Any]:
     return {"stock_code": stock_code, "pending_article_count": pending_article_count}
 
 
+def _to_corpus_row(
+    row: dict[str, Any],
+    *,
+    stock_code: str,
+    company_name: str,
+) -> dict[str, Any]:
+    published_at = row["published_at"]
+    if isinstance(published_at, datetime):
+        published_at = published_at.isoformat()
+    title = row.get("title", "")
+    summary = row.get("summary", "")
+    return {
+        "document_id": row["document_id"],
+        "source": row.get("source", ""),
+        "title": title,
+        "summary": summary,
+        "published_at": published_at,
+        "canonical_url": row.get("canonical_url", ""),
+        "original_url": row.get("original_url", ""),
+        "source_url": row.get("source_url", ""),
+        "content_hash": row.get("content_hash", ""),
+        "stock_code": stock_code,
+        "company_name": company_name,
+        "text": f"{title}. {summary}".strip(),
+        "relevance_confidence": float(row.get("confidence", 0)),
+        "relevance_evidence": list(row.get("evidence") or []),
+        "matched_queries": list(row.get("matched_queries") or []),
+        "rule_version": row.get("rule_version", ""),
+    }
+
+
+def hydrate_stock_corpus(stock_code: str, *, lookback_days: int = 90) -> dict[str, Any]:
+    """Supabase의 적합 기사로 종목별 BERTopic 입력 corpus를 재구성한다."""
+
+    if lookback_days < 30:
+        raise ValueError("lookback_days는 주요 이슈 창을 포함하도록 30일 이상이어야 합니다.")
+    company = get_company(stock_code)
+    with connect() as connection:
+        with connection.cursor(row_factory=dict_row) as cursor:
+            cursor.execute(
+                """
+                with ranked as (
+                  select
+                    article.document_id,
+                    article.source,
+                    article.title,
+                    article.summary,
+                    article.published_at,
+                    article.canonical_url,
+                    article.original_url,
+                    article.source_url,
+                    article.content_hash,
+                    links.confidence,
+                    links.evidence,
+                    links.rule_version,
+                    row_number() over (
+                      partition by article.document_id
+                      order by links.confidence desc, links.evaluated_at desc
+                    ) as relevance_rank
+                  from public.article_stocks links
+                  join public.news_articles article using (document_id)
+                  where links.stock_code = %s
+                    and links.status = 'eligible'
+                    and article.published_at >= now() - (%s * interval '1 day')
+                )
+                select
+                  ranked.*,
+                  array(
+                    select distinct other.query_text
+                    from public.article_stocks other
+                    where other.document_id = ranked.document_id
+                      and other.stock_code = %s
+                      and other.status = 'eligible'
+                    order by other.query_text
+                  ) as matched_queries
+                from ranked
+                where relevance_rank = 1
+                order by published_at desc, document_id
+                """,
+                (stock_code, lookback_days, stock_code),
+            )
+            rows = cursor.fetchall()
+        connection.commit()
+
+    corpus_rows = [
+        _to_corpus_row(row, stock_code=stock_code, company_name=company.name)
+        for row in rows
+    ]
+    corpus_path = (
+        PROJECT_ROOT / "data" / "processed" / "bertopic" / f"{stock_code}_articles.jsonl"
+    )
+    write_jsonl_atomic(corpus_path, corpus_rows)
+    return {
+        "stock_code": stock_code,
+        "article_count": len(corpus_rows),
+        "lookback_days": lookback_days,
+        "corpus_path": str(corpus_path.relative_to(PROJECT_ROOT)),
+    }
+
+
 def schedule_stock_if_changed(
     stock_code: str,
     *,
@@ -470,6 +583,10 @@ def sync_stock_snapshot(stock_code: str) -> dict[str, Any]:
                 """,
                 (stock_code, result["modelVersion"]),
             )
+        # 전체 Topic/Event는 현재 주요 이슈 snapshot과 분리해 과거 검색용으로 보존한다.
+        from collector.historical_events.service import sync_saved_events
+
+        sync_saved_events(connection)
         connection.commit()
     return result
 

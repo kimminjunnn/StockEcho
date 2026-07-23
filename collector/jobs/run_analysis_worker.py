@@ -7,8 +7,12 @@ import json
 import sys
 import time
 
-from collector.jobs.analyze_companies import analyze_existing_company
-from collector.repositories.supabase import QUEUE_NAME, connect, sync_stock_snapshot
+from collector.repositories.supabase import (
+    QUEUE_NAME,
+    connect,
+    hydrate_stock_corpus,
+    sync_stock_snapshot,
+)
 
 
 def process_one(*, visibility_timeout: int, device: str | None) -> bool:
@@ -37,6 +41,10 @@ def process_one(*, visibility_timeout: int, device: str | None) -> bool:
         connection.commit()
 
     try:
+        hydrate_stock_corpus(stock_code)
+        # 큐가 비어 있는 polling 실행에서는 BERTopic·PyTorch를 로드하지 않는다.
+        from collector.jobs.analyze_companies import analyze_existing_company
+
         analyze_existing_company(stock_code=stock_code, device=device)
         sync_stock_snapshot(stock_code)
     except Exception as error:

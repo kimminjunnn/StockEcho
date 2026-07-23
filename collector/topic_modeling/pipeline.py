@@ -10,6 +10,7 @@ from zoneinfo import ZoneInfo
 
 from collector.repositories.local import read_jsonl, write_jsonl_atomic
 from collector.topic_modeling.event_labeling import build_event_labels
+from collector.topic_modeling.issue_classifier import classify_major_issues
 from collector.topic_modeling.results import (
     annotate_major_issues,
     build_topic_records,
@@ -235,6 +236,7 @@ def run_topic_pipeline(
         limit=config.issue_limit,
         min_articles=config.issue_min_articles,
     )
+    issues, classification_summary = classify_major_issues(issues)
     annotate_major_issues(topics, issues)
     write_jsonl_atomic(topics_output_path, topics)
     write_jsonl_atomic(issues_output_path, issues)
@@ -247,6 +249,7 @@ def run_topic_pipeline(
         "topic_count": sum(not topic["is_outlier"] for topic in topics),
         "outlier_count": sum(topic["is_outlier"] for topic in topics),
         "major_issue_count": len(issues),
+        "issue_classification": classification_summary,
         "expanded_through_days": used_window,
         "topics_output_path": str(topics_output_path),
         "issues_output_path": str(issues_output_path),

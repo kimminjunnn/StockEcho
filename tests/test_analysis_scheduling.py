@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 from datetime import datetime, timedelta, timezone
 
-from collector.repositories.supabase import decide_analysis_schedule
+from collector.repositories.supabase import _to_corpus_row, decide_analysis_schedule
 
 
 class AnalysisSchedulingTests(unittest.TestCase):
@@ -58,6 +58,31 @@ class AnalysisSchedulingTests(unittest.TestCase):
             now=self.now,
         )
         self.assertFalse(decision.should_enqueue)
+
+    def test_builds_topic_corpus_row_from_supabase_article(self) -> None:
+        row = _to_corpus_row(
+            {
+                "document_id": "news_1",
+                "source": "naver",
+                "title": "삼성전자, HBM 공급 확대",
+                "summary": "신규 계약을 체결했다.",
+                "published_at": self.now,
+                "canonical_url": "https://example.com/1",
+                "original_url": "https://example.com/1",
+                "source_url": "https://example.com/1",
+                "content_hash": "hash",
+                "confidence": 0.91,
+                "evidence": ["company_in_title:+0.65"],
+                "matched_queries": ["삼성전자", "삼성전자 HBM"],
+                "rule_version": "relevance-v2",
+            },
+            stock_code="005930",
+            company_name="삼성전자",
+        )
+        self.assertEqual(row["published_at"], self.now.isoformat())
+        self.assertEqual(row["stock_code"], "005930")
+        self.assertEqual(row["relevance_confidence"], 0.91)
+        self.assertIn("HBM 공급 확대", row["text"])
 
 
 if __name__ == "__main__":
