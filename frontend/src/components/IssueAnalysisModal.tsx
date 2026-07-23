@@ -1,273 +1,832 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
-import Link from 'next/link';
+import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  CartesianGrid,
+  Line,
+  LineChart,
+  ReferenceLine,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
+import type {
+  HistoricalIssueAnalysis,
+  HistoricalIssueApiResponse,
+  HistoricalIssueEvent,
+} from "@/lib/historicalIssues";
+import type { StockIssue } from "@/lib/issues";
 
 interface IssueAnalysisModalProps {
   isOpen: boolean;
   onClose: () => void;
-  stockCode?: string;
+  stockCode: string;
+  issue: StockIssue;
 }
 
-interface IssueChartPoint {
-  stck_clpr: string;
+type AnalysisState =
+  | { status: "idle" | "loading"; data: null; error: null }
+  | { status: "ready"; data: HistoricalIssueAnalysis; error: null }
+  | { status: "error"; data: null; error: string };
+
+type HorizonKey = "d1" | "d5" | "d15" | "d30";
+
+const horizonOptions: ReadonlyArray<{
+  key: HorizonKey;
+  label: string;
+  points: ReadonlyArray<HorizonKey>;
+}> = [
+  { key: "d1", label: "1일", points: ["d1"] },
+  { key: "d5", label: "5일", points: ["d1", "d5"] },
+  { key: "d15", label: "15일", points: ["d1", "d5", "d15"] },
+  { key: "d30", label: "30일", points: ["d1", "d5", "d15", "d30"] },
+];
+
+const seriesColors = ["#3182F6", "#8B95A1", "#B0B8C1", "#D1D6DB"];
+
+function formatPercent(value: number | null): string {
+  if (value === null) return "관측값 없음";
+  const sign = value > 0 ? "+" : "";
+  return `${sign}${value.toFixed(2)}%`;
 }
 
-interface IssueChartResponse {
-  success: boolean;
-  data?: IssueChartPoint[];
+function formatDate(value: string): string {
+  const [year, month, day] = value.split("-");
+  return `${year}.${month}.${day}`;
 }
 
-export default function IssueAnalysisModal({ isOpen, onClose, stockCode = "035420" }: IssueAnalysisModalProps) {
-  const [chartPeriod, setChartPeriod] = useState<1 | 5 | 15 | 30>(15);
-  const [issueData, setIssueData] = useState<IssueChartPoint[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+function returnColor(value: number | null): string {
+  if (value === null) return "text-outline";
+  if (value > 0) return "text-chart-up";
+  if (value < 0) return "text-chart-down";
+  return "text-on-surface";
+}
 
-  useEffect(() => {
-    if (!isOpen || !stockCode) return;
-    
-    // KIS API fetching logic for past issue
-    const startDt = new Date("2024-05-20");
-    const endDt = new Date(startDt);
-    endDt.setDate(startDt.getDate() + chartPeriod);
+function articleUrl(event: HistoricalIssueEvent): string | null {
+  return (
+    event.representativeArticle.canonicalUrl
+    || event.representativeArticle.sourceUrl
+    || null
+  );
+}
 
-    const formatDate = (date: Date) => {
-      const y = date.getFullYear();
-      const m = String(date.getMonth() + 1).padStart(2, '0');
-      const d = String(date.getDate()).padStart(2, '0');
-      return `${y}${m}${d}`;
-    };
+function EventEvidence({
+  event,
+  selected,
+  onSelect,
+  variant,
+}: {
+  event: HistoricalIssueEvent;
+  selected: boolean;
+  onSelect: () => void;
+  variant: "timeline" | "card";
+}) {
+  const url = articleUrl(event);
 
-    const fetchIssueData = async () => {
-      setIsLoading(true);
-      try {
-        const res = await fetch(`/api/stock/issue-chart/${stockCode}?startDate=${formatDate(startDt)}&endDate=${formatDate(endDt)}`);
-        if (res.ok) {
-          const data = await res.json() as IssueChartResponse;
-          if (data.success && data.data) {
-            // KIS API returns data from most recent to oldest. We want chronologically from oldest (start) to newest (end)
-            setIssueData([...data.data].reverse());
-          }
-        }
-      } catch (e) {
-        console.error("Issue chart fetch error:", e);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    fetchIssueData();
-  }, [isOpen, stockCode, chartPeriod]);
-
-  if (!isOpen) return null;
-
-  // Render variables for dynamic chart
-  let polylinePoints = "";
-  let circles: React.ReactNode[] = [];
-  let endY = 70;
-  let dropRateStr = "-7.47%"; 
-
-  if (issueData.length > 0) {
-    const prices = issueData.map(d => parseInt(d.stck_clpr, 10));
-    const maxP = Math.max(...prices);
-    const minP = Math.min(...prices);
-    
-    const range = (maxP - minP) || 1;
-    const yMax = maxP + range * 0.1;
-    const yMin = minP - range * 0.1;
-
-    // Y maps to 20 ~ 110
-    const mapY = (val: number) => 110 - ((val - yMin) / (yMax - yMin)) * 90;
-    
-    // X maps to 0 ~ 360
-    const stepX = prices.length > 1 ? 360 / (prices.length - 1) : 360;
-
-    const points = prices.map((p, i) => `${i * stepX},${mapY(p)}`);
-    polylinePoints = points.join(" ");
-
-    circles = prices.map((p, i) => (
-      <circle key={i} cx={i * stepX} cy={mapY(p)} r="2.5" fill="#3182f6"/>
-    ));
-    
-    endY = mapY(prices[prices.length - 1]);
-    
-    const dropRate = ((prices[prices.length - 1] - prices[0]) / prices[0] * 100).toFixed(2);
-    dropRateStr = `${dropRate}%`;
-  } else {
-    polylinePoints = "0,20 50,65 90,100 150,85 210,95 270,105 360,70"; // Mock fallback
-    endY = 70;
+  if (variant === "timeline") {
+    return (
+      <article className="relative border-l-2 border-primary-fixed pb-md pl-md last:pb-0">
+        <span
+          aria-hidden="true"
+          className="absolute -left-[7px] top-1 h-3 w-3 rounded-full border-2 border-surface-container-low bg-primary"
+        />
+        <button
+          type="button"
+          onClick={onSelect}
+          aria-pressed={selected}
+          className={`w-full rounded-xl px-sm py-xs text-left transition-colors ${
+            selected ? "bg-primary-fixed/70" : "hover:bg-surface-container"
+          }`}
+        >
+          <div className="flex items-start justify-between gap-sm">
+            <div className="min-w-0">
+              <p className="text-xs font-bold text-outline">
+                {formatDate(event.eventDate)}
+              </p>
+              <p className="mt-xs text-sm font-bold leading-snug text-on-surface">
+                {event.name}
+              </p>
+            </div>
+            <span className="shrink-0 text-base font-extrabold text-primary">
+              {Math.round(event.similarityScore * 100)}%
+            </span>
+          </div>
+          <p className="mt-xs line-clamp-2 text-xs leading-relaxed text-on-surface-variant">
+            {event.similarityReasons.join(" · ")}
+          </p>
+          <p className="mt-xs text-[11px] text-outline">
+            원문 {event.sourceCount}곳 · 관련 기사 {event.articleCount}건
+          </p>
+        </button>
+        {url && (
+          <a
+            href={url}
+            target="_blank"
+            rel="noreferrer"
+            className="ml-sm mt-xs block truncate text-[11px] font-bold text-primary hover:underline"
+          >
+            대표 기사 보기
+          </a>
+        )}
+      </article>
+    );
   }
 
   return (
-    <div className="fixed inset-0 z-[100] flex justify-center items-center p-4 bg-gray-900 bg-opacity-60 backdrop-blur-sm">
-      <div className="bg-white w-full max-w-[920px] rounded-[24px] shadow-2xl overflow-hidden flex flex-col relative max-h-[90vh] overflow-y-auto hide-scrollbar">
-        
-        <div className="flex flex-col md:flex-row w-full">
-          {/* Left Column */}
-          <section className="w-full md:w-[43%] p-8 md:p-9 border-b md:border-b-0 md:border-r border-gray-100 flex flex-col">
-            <p className="text-[#ff3b30] font-bold text-[11px] tracking-wider mb-1">AI ISSUE ANALYSIS</p>
-            <h1 className="text-[28px] font-extrabold text-[#191f28] tracking-tight mb-4">파업 선언</h1>
-            
-            <div className="flex items-center gap-2 mb-8">
-              <span className="bg-[#f2f4f6] px-3 py-1.5 rounded-full text-[12px] text-[#6b7684] font-medium">
-                사건 발생일: 2024.05.20
-              </span>
-              <span className="bg-[#fff0f0] px-3 py-1.5 rounded-full text-[12px] text-[#ff3b30] font-bold">
-                심각도: High
-              </span>
-            </div>
-
-            <div className="mb-8">
-              <h2 className="text-[17px] font-bold text-[#191f28] mb-3">자사 과거 유사 이슈</h2>
-              <div className="relative pl-4">
-                <div className="absolute left-0 top-1.5 w-[7px] h-[7px] bg-primary rounded-full"></div>
-                <p className="text-[12px] text-[#8b95a1] font-semibold mb-1">2022년 11월 14일</p>
-                <p className="text-[13px] leading-relaxed text-[#4e5968]">
-                  노조 전면 파업 선언에 따른 생산 라인 중단. 당시 공급망 차질 우려로 주가 급락 및 14일간의 회복기 소요.
+    <article
+      className={`rounded-xl border bg-surface transition-colors ${
+        selected
+          ? "border-primary ring-1 ring-primary/20"
+          : "border-outline-variant hover:border-primary/40"
+      }`}
+    >
+      <button
+        type="button"
+        onClick={onSelect}
+        aria-pressed={selected}
+        className="w-full p-md text-left"
+      >
+        <div className="flex items-start gap-sm">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary-fixed text-primary">
+            <span className="material-symbols-outlined text-xl" aria-hidden="true">
+              factory
+            </span>
+          </span>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-start justify-between gap-sm">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-extrabold text-on-surface">
+                  {event.companyName}
+                </p>
+                <p className="mt-0.5 text-[11px] text-outline">
+                  {formatDate(event.eventDate)} · 원문 {event.sourceCount}곳
                 </p>
               </div>
-            </div>
-
-            <div>
-              <div className="flex justify-between items-baseline mb-3">
-                <h2 className="text-[17px] font-bold text-[#191f28] leading-tight">유사 종목의<br/>비슷한 과거 이슈</h2>
-                <span className="text-[11px] text-[#b0b8c1]">총 12건 분석</span>
-              </div>
-
-              <div className="space-y-2.5">
-                <div className="border border-[#e5e8eb] bg-[#f9fafb] rounded-[14px] p-3.5 flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 bg-[#e8f3ff] rounded-lg flex items-center justify-center text-primary flex-shrink-0">
-                      <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/></svg>
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-bold text-[14px] text-[#191f28]">기업 A</span>
-                        <span className="text-[11px] text-[#8b95a1]">반도체 부문</span>
-                      </div>
-                      <p className="text-[12px] text-[#4e5968] mt-0.5">‘반도체 생산 라인 가동 중단 사고’</p>
-                    </div>
-                  </div>
-                  <div className="text-right flex-shrink-0 ml-2">
-                    <p className="text-primary text-[19px] font-extrabold leading-none">92%</p>
-                    <p className="text-[10px] text-[#8b95a1] mt-0.5">유사도</p>
-                  </div>
-                </div>
-
-                <div className="border border-[#e5e8eb] bg-[#f9fafb] rounded-[14px] p-3.5 flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 bg-[#e8f3ff] rounded-lg flex items-center justify-center text-primary flex-shrink-0">
-                      <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-bold text-[14px] text-[#191f28]">기업 B</span>
-                        <span className="text-[11px] text-[#8b95a1]">디스플레이 부문</span>
-                      </div>
-                      <p className="text-[12px] text-[#4e5968] mt-0.5">‘공급망 차질로 인한 실적 악화 우려’</p>
-                    </div>
-                  </div>
-                  <div className="text-right flex-shrink-0 ml-2">
-                    <p className="text-primary text-[19px] font-extrabold leading-none">87%</p>
-                    <p className="text-[10px] text-[#8b95a1] mt-0.5">유사도</p>
-                  </div>
-                </div>
+              <div className="shrink-0 text-right">
+                <p className="text-xl font-extrabold text-primary">
+                  {Math.round(event.similarityScore * 100)}%
+                </p>
+                <p className="text-[10px] text-outline">유사도</p>
               </div>
             </div>
-          </section>
+            <p className="mt-sm line-clamp-2 text-xs font-bold leading-relaxed text-on-surface-variant">
+              {event.name}
+            </p>
+            <p className="mt-xs line-clamp-2 text-[11px] leading-relaxed text-outline">
+              {event.similarityReasons.join(" · ")}
+            </p>
+          </div>
+        </div>
+      </button>
+      {url && (
+        <a
+          href={url}
+          target="_blank"
+          rel="noreferrer"
+          className="mx-md mb-sm block truncate border-t border-outline-variant pt-sm text-[11px] font-bold text-primary hover:underline"
+        >
+          대표 기사: {event.representativeArticle.title}
+        </a>
+      )}
+    </article>
+  );
+}
 
-          {/* Right Column */}
-          <section className="w-full md:w-[57%] p-8 md:p-9 flex flex-col justify-between relative">
-            <button onClick={onClose} className="absolute top-6 right-6 text-[#8b95a1] hover:text-[#191f28] transition-colors">
-              <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"/></svg>
-            </button>
+function ResultLayout({
+  analysis,
+  issue,
+  selectedHorizon,
+  setSelectedHorizon,
+  selectedEventId,
+  setSelectedEventId,
+  onClose,
+}: {
+  analysis: HistoricalIssueAnalysis;
+  issue: StockIssue;
+  selectedHorizon: HorizonKey;
+  setSelectedHorizon: (value: HorizonKey) => void;
+  selectedEventId: string;
+  setSelectedEventId: (value: string) => void;
+  onClose: () => void;
+}) {
+  const ownEvents = analysis.events.filter(
+    (event) => event.scope === "own_company",
+  );
+  const otherEvents = analysis.events.filter(
+    (event) => event.scope === "other_company",
+  );
+  const activeHorizon = horizonOptions.find(
+    (option) => option.key === selectedHorizon,
+  ) ?? horizonOptions[0];
 
-            <div>
-              <div className="flex justify-between items-center mb-6 pr-8">
-                <h2 className="text-[20px] font-bold text-[#191f28]">과거 이슈 - 주가 변동 비교</h2>
-                <div className="flex bg-[#f2f4f6] p-1 rounded-lg">
-                  <button onClick={() => setChartPeriod(1)} className={`px-3 py-1 text-[12px] font-bold rounded-md shadow-sm transition-colors ${chartPeriod === 1 ? 'bg-primary text-white' : 'text-[#6b7684] hover:bg-gray-200'}`}>1일</button>
-                  <button onClick={() => setChartPeriod(5)} className={`px-3 py-1 text-[12px] font-bold rounded-md shadow-sm transition-colors ${chartPeriod === 5 ? 'bg-primary text-white' : 'text-[#6b7684] hover:bg-gray-200'}`}>5일</button>
-                  <button onClick={() => setChartPeriod(15)} className={`px-3 py-1 text-[12px] font-bold rounded-md shadow-sm transition-colors ${chartPeriod === 15 ? 'bg-primary text-white' : 'text-[#6b7684] hover:bg-gray-200'}`}>15일</button>
-                  <button onClick={() => setChartPeriod(30)} className={`px-3 py-1 text-[12px] font-bold rounded-md shadow-sm transition-colors ${chartPeriod === 30 ? 'bg-primary text-white' : 'text-[#6b7684] hover:bg-gray-200'}`}>30일</button>
-                </div>
-              </div>
+  const chartData = useMemo(() => {
+    const points = [
+      { key: "base", label: "D-0 (발생일)" },
+      ...activeHorizon.points.map((key) => ({
+        key,
+        label: `D+${key.slice(1)}`,
+      })),
+    ];
+    return points.map((point) => {
+      const row: Record<string, string | number | null> = {
+        period: point.label,
+      };
+      analysis.events.forEach((event, index) => {
+        row[`event${index}`] =
+          point.key === "base"
+            ? 0
+            : event.priceReaction.returns[point.key as HorizonKey];
+      });
+      return row;
+    });
+  }, [activeHorizon.points, analysis.events]);
 
-              <div className="flex gap-3 items-center mb-3">
-                <div className="flex flex-col gap-1.5 flex-shrink-0">
-                  <span className="px-2.5 py-1 text-[10px] border border-[#e5e8eb] rounded text-[#8b95a1] text-center bg-white">Total</span>
-                  <span className="px-2.5 py-1 text-[10px] bg-primary text-white font-bold rounded text-center">자사</span>
-                  <span className="px-2.5 py-1 text-[10px] text-[#b0b8c1] text-center">기업 A</span>
-                  <span className="px-2.5 py-1 text-[10px] text-[#b0b8c1] text-center">기업 B</span>
-                  <span className="px-2.5 py-1 text-[10px] text-[#b0b8c1] text-center">기업 C</span>
-                </div>
+  const selectedValues = analysis.events
+    .map((event) => event.priceReaction.returns[selectedHorizon])
+    .filter((value): value is number => value !== null);
+  const averageReturn =
+    selectedValues.length > 0
+      ? selectedValues.reduce((sum, value) => sum + value, 0)
+        / selectedValues.length
+      : null;
 
-                <div className="flex-grow relative h-[160px]">
-                  {isLoading && (
-                    <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/60 backdrop-blur-[1px]">
-                      <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
-                    </div>
-                  )}
-                  <svg className="w-full h-full" viewBox="0 0 360 140" preserveAspectRatio="none">
-                    <line x1="0" y1="20" x2="360" y2="20" stroke="#f2f4f6" strokeWidth="1"/>
-                    <line x1="0" y1="50" x2="360" y2="50" stroke="#f2f4f6" strokeWidth="1"/>
-                    <line x1="0" y1="80" x2="360" y2="80" stroke="#f2f4f6" strokeWidth="1"/>
-                    <line x1="0" y1="110" x2="360" y2="110" stroke="#e5e8eb" strokeDasharray="3,3" strokeWidth="1"/>
+  return (
+    <div className="relative block lg:grid lg:min-h-0 lg:flex-1 lg:grid-cols-[42%_58%]">
+      <button
+        type="button"
+        onClick={onClose}
+        aria-label="과거 유사 이슈 분석 닫기"
+        className="absolute right-md top-md z-10 rounded-full p-xs text-outline transition-colors hover:bg-surface-container hover:text-on-surface lg:hidden"
+      >
+        <span className="material-symbols-outlined text-3xl">close</span>
+      </button>
 
-                    {/* MOCK background curves for other companies */}
-                    <path d="M 0 20 Q 80 15, 180 35 T 360 20" fill="none" stroke="#e5e8eb" strokeWidth="1.5"/>
-                    <path d="M 0 20 Q 100 55, 200 40 T 360 50" fill="none" stroke="#e5e8eb" strokeWidth="1.5"/>
-                    <path d="M 0 20 Q 70 70, 180 80 T 360 65" fill="none" stroke="#e5e8eb" strokeWidth="1.5"/>
-
-                    <polyline points={polylinePoints} fill="none" stroke="#3182f6" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
-                    {circles}
-
-                    <text x="355" y={endY - 10} textAnchor="end" fill="#3182f6" fontSize="10" fontWeight="bold">자사</text>
-                  </svg>
-
-                  <div className="flex justify-between text-[10px] text-[#b0b8c1] font-medium pt-1">
-                    <span>D-0 (발생일)</span>
-                    <span>D+{chartPeriod}</span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex justify-center items-center gap-5 mb-6 text-[11px] text-[#6b7684]">
-                <div className="flex items-center gap-1.5"><span className="w-3 h-0.5 bg-primary rounded-full"></span><span>자사</span></div>
-                <div className="flex items-center gap-1.5"><span className="w-3 h-0.5 bg-[#b0b8c1] rounded-full"></span><span>유사 기업 A, B, C</span></div>
-                <div className="flex items-center gap-1.5"><span className="w-3 h-0.5 bg-[#e5e8eb] rounded-full"></span><span>전체 평균</span></div>
-              </div>
-
-              <div className="grid grid-cols-3 gap-2.5 mb-6">
-                <div className="border border-[#e5e8eb] bg-[#f9fafb] rounded-[12px] py-3.5 px-2 text-center">
-                  <p className="text-[10px] text-[#8b95a1] font-medium mb-1">평균 하락률</p>
-                  <p className={`text-[20px] font-extrabold leading-none ${dropRateStr.startsWith('-') ? 'text-blue-500' : 'text-red-500'}`}>{dropRateStr}</p>
-                </div>
-                <div className="border border-[#e5e8eb] bg-[#f9fafb] rounded-[12px] py-3.5 px-2 text-center">
-                  <p className="text-[10px] text-[#8b95a1] font-medium mb-1">평균 회복 기간</p>
-                  <p className="text-[20px] font-extrabold text-[#191f28] leading-none">12일</p>
-                </div>
-                <div className="border border-[#e5e8eb] bg-[#f9fafb] rounded-[12px] py-3.5 px-2 text-center">
-                  <p className="text-[10px] text-[#8b95a1] font-medium mb-1">데이터 신뢰도</p>
-                  <p className="text-[20px] font-extrabold text-primary leading-none">High</p>
-                </div>
-              </div>
-            </div>
-
-            <Link href={`/stock/${stockCode}`} className="w-full bg-primary hover:bg-blue-600 text-white font-bold py-4 rounded-[14px] text-[16px] transition-all flex justify-center text-center mt-4">
-              현재 주식 상황 보러 가기
-            </Link>
-          </section>
+      <aside className="bg-[#F8F9FD] px-lg py-xl lg:min-h-0 lg:overflow-y-auto lg:border-r lg:border-outline-variant">
+        <p className="text-[11px] font-extrabold tracking-[0.12em] text-[#F04452]">
+          AI ISSUE ANALYSIS
+        </p>
+        <h2
+          id="historical-analysis-title"
+          className="mt-xs text-3xl font-black leading-tight tracking-tight text-on-surface"
+        >
+          {issue.name}
+        </h2>
+        <div className="mt-md flex flex-wrap gap-sm">
+          <span className="rounded-full bg-surface-container px-sm py-xs text-xs text-on-surface-variant">
+            사건 발생일: {formatDate(issue.eventDate)}
+          </span>
+          <span className="rounded-full bg-primary-fixed px-sm py-xs text-xs font-bold text-on-primary-fixed-variant">
+            {issue.topicLabel}
+          </span>
         </div>
 
-        <footer className="w-full bg-[#f2f4f6] px-6 py-4 text-center border-t border-[#e5e8eb]">
-          <p className="text-[11px] text-[#6b7684] leading-relaxed">
-            ‘노조 / 파업’ 관련 이슈로 ‘반도체/SI’ 기업 관련 주가가 일 평균 <span className="text-primary font-bold">“6.31%”</span> 하락했습니다. 예상되는 ‘라인’의 주가 변동은 <span className="text-primary font-bold">“-4.5%”</span> 입니다.
+        <section className="mt-xl">
+          <h3 className="text-xl font-black text-on-surface">자사 과거 유사 이슈</h3>
+          <div className="mt-md">
+            {ownEvents.length > 0 ? (
+              <div className="space-y-sm">
+                {ownEvents.map((event) => (
+                  <EventEvidence
+                    key={event.eventId}
+                    event={event}
+                    selected={selectedEventId === event.eventId}
+                    onSelect={() => setSelectedEventId(event.eventId)}
+                    variant="timeline"
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className="rounded-xl border border-dashed border-outline-variant bg-surface/70 p-md text-xs leading-relaxed text-outline">
+                관련도·유사도·복수 출처 기준을 통과한 자사 과거 사례가 없습니다.
+              </div>
+            )}
+          </div>
+        </section>
+
+        <section className="mt-xl">
+          <div className="flex items-end justify-between gap-sm">
+            <h3 className="text-xl font-black leading-tight text-on-surface">
+              유사 종목의
+              <br />
+              비슷한 과거 이슈
+            </h3>
+            <span className="pb-1 text-xs text-outline">
+              {otherEvents.length}건 분석
+            </span>
+          </div>
+          <div className="mt-md space-y-sm">
+            {otherEvents.length > 0 ? (
+              otherEvents.map((event) => (
+                <EventEvidence
+                  key={event.eventId}
+                  event={event}
+                  selected={selectedEventId === event.eventId}
+                  onSelect={() => setSelectedEventId(event.eventId)}
+                  variant="card"
+                />
+              ))
+            ) : (
+              <div className="rounded-xl border border-dashed border-outline-variant bg-surface/70 p-md text-xs leading-relaxed text-outline">
+                품질 기준을 통과한 다른 종목의 과거 사례가 없습니다.
+              </div>
+            )}
+          </div>
+        </section>
+      </aside>
+
+      <main className="relative bg-surface px-lg py-xl lg:min-h-0 lg:overflow-y-auto">
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="과거 유사 이슈 분석 닫기"
+          className="absolute right-lg top-lg hidden rounded-full p-xs text-outline transition-colors hover:bg-surface-container hover:text-on-surface lg:block"
+        >
+          <span className="material-symbols-outlined text-3xl">close</span>
+        </button>
+
+        <div className="pr-12">
+          <h3 className="text-xl font-black text-on-surface">
+            과거 이슈 · 주가 변동 비교
+          </h3>
+          <div className="mt-md flex flex-wrap gap-xs" role="tablist" aria-label="비교 거래일">
+            {horizonOptions.map((option) => (
+              <button
+                key={option.key}
+                type="button"
+                role="tab"
+                aria-selected={selectedHorizon === option.key}
+                onClick={() => setSelectedHorizon(option.key)}
+                className={`rounded-lg px-md py-sm text-sm font-bold transition-colors ${
+                  selectedHorizon === option.key
+                    ? "bg-primary text-on-primary shadow-sm"
+                    : "text-on-surface-variant hover:bg-surface-container"
+                }`}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {analysis.completeness !== "complete" && (
+          <div className="mt-md rounded-xl border border-warning/25 bg-warning/10 px-md py-sm text-xs leading-relaxed text-on-surface-variant">
+            품질 기준을 통과한 사례와 실제 관측 가격만 표시합니다. 부족한 값은
+            추정하지 않았습니다.
+          </div>
+        )}
+
+        <div className="mt-lg grid min-h-[390px] grid-cols-1 gap-md sm:grid-cols-[88px_minmax(0,1fr)]">
+          <div className="grid grid-cols-2 gap-xs sm:flex sm:flex-col sm:justify-center">
+            <button
+              type="button"
+              onClick={() => setSelectedEventId("all")}
+              aria-pressed={selectedEventId === "all"}
+              className={`rounded-lg border px-sm py-sm text-xs font-bold transition-colors ${
+                selectedEventId === "all"
+                  ? "border-primary bg-primary text-on-primary shadow-sm"
+                  : "border-outline-variant bg-surface text-on-surface-variant"
+              }`}
+            >
+              전체
+            </button>
+            {analysis.events.map((event, index) => (
+              <button
+                key={event.eventId}
+                type="button"
+                onClick={() => setSelectedEventId(event.eventId)}
+                aria-pressed={selectedEventId === event.eventId}
+                title={`${event.companyName} · ${event.name}`}
+                className={`truncate rounded-lg border px-sm py-sm text-xs font-bold transition-colors ${
+                  selectedEventId === event.eventId
+                    ? "border-primary bg-primary text-on-primary shadow-sm"
+                    : "border-outline-variant bg-surface text-on-surface-variant hover:border-primary/40"
+                }`}
+              >
+                {event.scope === "own_company"
+                  ? "자사"
+                  : event.companyName || `사례 ${index + 1}`}
+              </button>
+            ))}
+          </div>
+
+          <div className="min-w-0">
+            <ResponsiveContainer width="100%" height={360}>
+              <LineChart
+                data={chartData}
+                margin={{ top: 30, right: 18, bottom: 16, left: 0 }}
+              >
+                <CartesianGrid
+                  stroke="#E5E8EB"
+                  strokeDasharray="4 5"
+                  vertical={false}
+                />
+                <XAxis
+                  dataKey="period"
+                  tick={{ fill: "#6B7684", fontSize: 11 }}
+                  axisLine={{ stroke: "#B0B8C1" }}
+                  tickLine={false}
+                  interval={0}
+                />
+                <YAxis
+                  tick={{ fill: "#8B95A1", fontSize: 11 }}
+                  tickFormatter={(value: number) => `${value}%`}
+                  axisLine={false}
+                  tickLine={false}
+                  width={46}
+                />
+                <Tooltip
+                  formatter={(value) =>
+                    typeof value === "number"
+                      ? [`${value > 0 ? "+" : ""}${value.toFixed(2)}%`, "수익률"]
+                      : ["관측값 없음", "수익률"]
+                  }
+                  contentStyle={{
+                    borderRadius: 12,
+                    border: "1px solid #D1D6DB",
+                    boxShadow: "0 8px 24px rgba(0,0,0,0.08)",
+                    fontSize: 12,
+                  }}
+                />
+                <ReferenceLine y={0} stroke="#8B95A1" />
+                {analysis.events.map((event, index) => {
+                  const isSelected =
+                    selectedEventId === "all"
+                    || selectedEventId === event.eventId;
+                  const color =
+                    selectedEventId === "all"
+                      ? seriesColors[index % seriesColors.length]
+                      : isSelected
+                        ? "#3182F6"
+                        : "#D1D6DB";
+                  return (
+                    <Line
+                      key={event.eventId}
+                      type="linear"
+                      dataKey={`event${index}`}
+                      name={`${event.companyName} · ${formatDate(event.eventDate)}`}
+                      stroke={color}
+                      strokeWidth={isSelected ? 3 : 1.5}
+                      strokeOpacity={isSelected ? 1 : 0.55}
+                      dot={{ r: isSelected ? 4 : 2, fill: color }}
+                      activeDot={{ r: 6 }}
+                      connectNulls={false}
+                      isAnimationActive={false}
+                    />
+                  );
+                })}
+              </LineChart>
+            </ResponsiveContainer>
+            <div className="mt-sm flex flex-wrap justify-center gap-x-md gap-y-xs">
+              {analysis.events.map((event, index) => (
+                <span
+                  key={event.eventId}
+                  className="inline-flex items-center gap-xs text-[11px] text-outline"
+                >
+                  <span
+                    className="h-0.5 w-4 rounded-full"
+                    style={{
+                      backgroundColor:
+                        selectedEventId === "all"
+                          ? seriesColors[index % seriesColors.length]
+                          : selectedEventId === event.eventId
+                            ? "#3182F6"
+                            : "#D1D6DB",
+                    }}
+                  />
+                  {event.companyName} {formatDate(event.eventDate)}
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-lg grid gap-sm sm:grid-cols-3">
+          <div className="rounded-xl border border-outline-variant bg-[#FAFAFE] px-md py-md text-center">
+            <p className="text-xs font-bold text-outline">
+              {activeHorizon.label} 평균 수익률
+            </p>
+            <p className={`mt-xs text-2xl font-black ${returnColor(averageReturn)}`}>
+              {formatPercent(averageReturn)}
+            </p>
+          </div>
+          <div className="rounded-xl border border-outline-variant bg-[#FAFAFE] px-md py-md text-center">
+            <p className="text-xs font-bold text-outline">가격 관측 사례</p>
+            <p className="mt-xs text-2xl font-black text-on-surface">
+              {selectedValues.length}
+              <span className="text-base text-outline">/{analysis.events.length}건</span>
+            </p>
+          </div>
+          <div className="rounded-xl border border-outline-variant bg-[#FAFAFE] px-md py-md text-center">
+            <p className="text-xs font-bold text-outline">복수 출처 검증 사례</p>
+            <p className="mt-xs text-2xl font-black text-primary">
+              {analysis.events.filter((event) => event.sourceCount >= 2).length}건
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-md rounded-xl bg-surface-container-low px-md py-sm text-[11px] leading-relaxed text-on-surface-variant">
+          {analysis.cacheHit
+            ? "동일 요청의 저장된 분석 결과를 사용했습니다."
+            : analysis.search.naverBackfillUsed
+              ? `저장 Event가 부족해 NAVER 보충 검색을 ${analysis.search.naverCallCount}회 실행했습니다.`
+              : "Supabase에 저장된 Event에서 품질 기준을 통과한 사례를 찾았습니다."}
+          <span className="ml-1">
+            NAVER 검색어: {analysis.target.searchKeywords.join(" · ")}
+          </span>
+        </div>
+
+        <button
+          type="button"
+          onClick={onClose}
+          className="mt-md w-full rounded-xl bg-primary px-md py-md text-lg font-black text-on-primary shadow-[0_10px_24px_rgba(49,130,246,0.22)] transition-colors hover:bg-primary-container"
+        >
+          현재 주식 상황 보러 가기
+        </button>
+
+        <div className="mt-md border-t border-outline-variant pt-sm">
+          <p className="text-[11px] leading-relaxed text-on-surface-variant">
+            {analysis.dataCoverageNotice}
           </p>
-          <p className="text-[10px] text-[#b0b8c1] mt-1">
-            *본 분석은 과거 유사 사건 데이터 기반의 시뮬레이션이며, 확정된 미래 주가 예측이나 매수·매도 투자 권유가 아닙니다.
+          <p className="mt-1 text-[10px] leading-relaxed text-outline">
+            그래프는 실제로 확보된 거래일 관측점만 연결합니다. 과거 수익률은
+            미래 수익률을 보장하거나 매수·매도를 권유하지 않습니다.
           </p>
-        </footer>
+        </div>
+      </main>
+    </div>
+  );
+}
+
+function LoadingLayout({
+  issue,
+  onClose,
+}: {
+  issue: StockIssue;
+  onClose: () => void;
+}) {
+  return (
+    <div className="relative block min-h-[620px] flex-1 lg:grid lg:grid-cols-[42%_58%]">
+      <button
+        type="button"
+        onClick={onClose}
+        aria-label="과거 유사 이슈 분석 닫기"
+        className="absolute right-lg top-lg z-10 rounded-full p-xs text-outline transition-colors hover:bg-surface-container hover:text-on-surface"
+      >
+        <span className="material-symbols-outlined text-3xl">close</span>
+      </button>
+
+      <aside className="bg-[#F8F9FD] px-lg py-xl lg:border-r lg:border-outline-variant">
+        <p className="text-[11px] font-extrabold tracking-[0.12em] text-[#F04452]">
+          AI ISSUE ANALYSIS
+        </p>
+        <h2
+          id="historical-analysis-title"
+          className="mt-xs w-full break-keep pr-xl text-3xl font-black leading-tight tracking-tight text-on-surface"
+        >
+          {issue.name}
+        </h2>
+        <div className="mt-md flex w-full flex-wrap gap-sm">
+          <span className="rounded-full bg-surface-container px-sm py-xs text-xs text-on-surface-variant">
+            사건 발생일: {formatDate(issue.eventDate)}
+          </span>
+          <span className="rounded-full bg-primary-fixed px-sm py-xs text-xs font-bold text-on-primary-fixed-variant">
+            {issue.topicLabel}
+          </span>
+        </div>
+
+        <div className="mt-xl space-y-xl" aria-hidden="true">
+          <section>
+            <div className="h-6 w-40 animate-pulse rounded-md bg-surface-container-high" />
+            <div className="mt-md border-l-2 border-primary-fixed pl-md">
+              <div className="h-3 w-24 animate-pulse rounded bg-surface-container-high" />
+              <div className="mt-sm h-4 w-4/5 animate-pulse rounded bg-surface-container-high" />
+              <div className="mt-xs h-3 w-full animate-pulse rounded bg-surface-container" />
+              <div className="mt-xs h-3 w-3/4 animate-pulse rounded bg-surface-container" />
+            </div>
+          </section>
+          <section>
+            <div className="h-6 w-52 animate-pulse rounded-md bg-surface-container-high" />
+            <div className="mt-md space-y-sm">
+              {[0, 1].map((item) => (
+                <div
+                  key={item}
+                  className="rounded-xl border border-outline-variant bg-surface p-md"
+                >
+                  <div className="flex items-center gap-sm">
+                    <div className="h-10 w-10 shrink-0 animate-pulse rounded-lg bg-primary-fixed" />
+                    <div className="min-w-0 flex-1">
+                      <div className="h-4 w-24 animate-pulse rounded bg-surface-container-high" />
+                      <div className="mt-sm h-3 w-full animate-pulse rounded bg-surface-container" />
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        </div>
+      </aside>
+
+      <main className="flex min-h-[420px] min-w-0 items-center justify-center bg-surface px-lg py-xl">
+        <div className="flex w-full max-w-[520px] flex-col items-center text-center">
+          <div
+            aria-hidden="true"
+            className="h-12 w-12 shrink-0 animate-spin rounded-full border-4 border-primary-fixed border-t-primary"
+          />
+          <p className="mt-lg w-full break-keep text-lg font-black text-on-surface">
+            저장된 Event를 먼저 확인하고 있습니다
+          </p>
+          <p className="mt-sm w-full break-keep text-sm leading-relaxed text-outline">
+            저장된 사례가 부족한 경우에만 NAVER 유사도순 검색을 진행하고,
+            실제 거래일 가격을 연결합니다.
+          </p>
+          <div className="mt-lg flex w-full flex-wrap items-center justify-center gap-xs text-[11px] font-bold text-on-surface-variant">
+            <span className="rounded-full bg-surface-container-low px-sm py-xs">
+              저장 Event 확인
+            </span>
+            <span aria-hidden="true" className="text-outline">→</span>
+            <span className="rounded-full bg-surface-container-low px-sm py-xs">
+              필요 시 NAVER 보충
+            </span>
+            <span aria-hidden="true" className="text-outline">→</span>
+            <span className="rounded-full bg-surface-container-low px-sm py-xs">
+              거래일 가격 연결
+            </span>
+          </div>
+          <p className="mt-lg w-full break-keep text-[11px] leading-relaxed text-outline">
+            첫 요청은 잠시 걸릴 수 있으며, 동일 요청은 저장된 결과를 사용합니다.
+          </p>
+        </div>
+      </main>
+    </div>
+  );
+}
+
+export default function IssueAnalysisModal({
+  isOpen,
+  onClose,
+  stockCode,
+  issue,
+}: IssueAnalysisModalProps) {
+  const [state, setState] = useState<AnalysisState>({
+    status: "loading",
+    data: null,
+    error: null,
+  });
+  const [requestVersion, setRequestVersion] = useState(0);
+  const [selectedHorizon, setSelectedHorizon] = useState<HorizonKey>("d1");
+  const [selectedEventId, setSelectedEventId] = useState("all");
+
+  const loadAnalysis = useCallback(
+    async (signal: AbortSignal): Promise<AnalysisState | null> => {
+      try {
+        const response = await fetch(
+          `/api/stocks/${stockCode}/historical-issues`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              topicId: issue.topicId,
+              eventId: issue.eventId,
+              eventDate: issue.eventDate,
+              name: issue.name,
+              topicLabel: issue.topicLabel,
+              keywords: issue.keywords,
+            }),
+            cache: "no-store",
+            signal,
+          },
+        );
+        const payload = (await response.json()) as HistoricalIssueApiResponse;
+        if (!response.ok || !payload.success || !payload.data) {
+          throw new Error(payload.error || "과거 유사 이슈를 불러오지 못했습니다.");
+        }
+        return { status: "ready", data: payload.data, error: null };
+      } catch (error) {
+        if (signal.aborted) return null;
+        return {
+          status: "error",
+          data: null,
+          error:
+            error instanceof Error
+              ? error.message
+              : "과거 유사 이슈를 불러오지 못했습니다.",
+        };
+      }
+    },
+    [issue, stockCode],
+  );
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const controller = new AbortController();
+    void loadAnalysis(controller.signal).then((nextState) => {
+      if (nextState) setState(nextState);
+    });
+    return () => controller.abort();
+  }, [isOpen, loadAnalysis, requestVersion]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [isOpen, onClose]);
+
+  if (!isOpen) return null;
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="historical-analysis-title"
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-[#17191F]/55 p-sm backdrop-blur-[2px] sm:p-lg"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <div className="flex max-h-[94vh] min-h-[620px] w-full max-w-[1320px] flex-col overflow-y-auto rounded-[28px] bg-surface shadow-[0_32px_90px_rgba(0,0,0,0.25)] lg:overflow-hidden">
+        {state.status === "loading" ? (
+          <LoadingLayout issue={issue} onClose={onClose} />
+        ) : state.status === "ready" && state.data.events.length > 0 ? (
+          <ResultLayout
+            analysis={state.data}
+            issue={issue}
+            selectedHorizon={selectedHorizon}
+            setSelectedHorizon={setSelectedHorizon}
+            selectedEventId={selectedEventId}
+            setSelectedEventId={setSelectedEventId}
+            onClose={onClose}
+          />
+        ) : (
+          <div className="relative flex min-h-[620px] flex-1 flex-col items-center justify-center px-lg py-xl text-center">
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="과거 유사 이슈 분석 닫기"
+              className="absolute right-lg top-lg rounded-full p-xs text-outline hover:bg-surface-container"
+            >
+              <span className="material-symbols-outlined text-3xl">close</span>
+            </button>
+
+            <p className="text-[11px] font-extrabold tracking-[0.12em] text-[#F04452]">
+              AI ISSUE ANALYSIS
+            </p>
+            <h2
+              id="historical-analysis-title"
+              className="mt-xs w-full max-w-[672px] break-keep text-3xl font-black text-on-surface"
+            >
+              {issue.name}
+            </h2>
+
+            {state.status === "error" && (
+              <>
+                <span className="material-symbols-outlined mt-xl text-4xl text-error">
+                  error
+                </span>
+                <p className="mt-md font-bold text-on-surface">분석에 실패했습니다</p>
+                <p className="mt-xs w-full max-w-[448px] break-keep text-sm text-outline">
+                  {state.error}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setState({ status: "loading", data: null, error: null });
+                    setRequestVersion((version) => version + 1);
+                  }}
+                  className="mt-md rounded-lg bg-primary px-md py-sm text-sm font-bold text-on-primary"
+                >
+                  다시 시도
+                </button>
+              </>
+            )}
+
+            {state.status === "ready" && state.data.events.length === 0 && (
+              <>
+                <span className="material-symbols-outlined mt-xl text-4xl text-outline">
+                  search_off
+                </span>
+                <p className="mt-md font-bold text-on-surface">
+                  충분한 과거 사례가 없습니다
+                </p>
+                <p className="mt-xs w-full max-w-[448px] break-keep text-sm leading-relaxed text-outline">
+                  관련도·유사도·서로 다른 원문 출처 2곳 기준을 낮춰 억지로
+                  사례 수를 채우지 않았습니다.
+                </p>
+                <p className="mt-md w-full max-w-[512px] break-keep text-[11px] leading-relaxed text-outline">
+                  {state.data.dataCoverageNotice}
+                </p>
+              </>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

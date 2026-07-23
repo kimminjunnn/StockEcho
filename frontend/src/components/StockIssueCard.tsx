@@ -75,8 +75,13 @@ export default function StockIssueCard({ issue, stockCode }: StockIssueCardProps
           data-topic-id={issue.topicId}
           className="inline-flex flex-shrink-0 self-center items-center gap-xs rounded-lg border border-primary px-sm py-xs text-xs font-bold text-primary transition-colors hover:bg-primary-fixed focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
         >
-          <span className="material-symbols-outlined text-[16px]" aria-hidden="true">history</span>
-          과거 유사 이슈 보기
+          <span
+            className="material-symbols-outlined text-[16px]"
+            aria-hidden="true"
+          >
+            history
+          </span>
+          과거 유사 사례 분석
         </button>
       </div>
 
@@ -85,11 +90,14 @@ export default function StockIssueCard({ issue, stockCode }: StockIssueCardProps
         issue={issue}
         onClose={() => setIsAllArticlesOpen(false)}
       />
-      <IssueAnalysisModal
-        isOpen={isHistoryOpen}
-        stockCode={stockCode}
-        onClose={() => setIsHistoryOpen(false)}
-      />
+      {isHistoryOpen && (
+        <IssueAnalysisModal
+          isOpen
+          stockCode={stockCode}
+          issue={issue}
+          onClose={() => setIsHistoryOpen(false)}
+        />
+      )}
     </article>
   );
 }
