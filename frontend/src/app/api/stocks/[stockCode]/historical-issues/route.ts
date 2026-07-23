@@ -325,6 +325,10 @@ export async function POST(
     canonicalIssue.name,
     "--topic-label",
     canonicalIssue.topicLabel,
+    "--category",
+    canonicalIssue.category ?? "",
+    "--impact",
+    canonicalIssue.impact ?? "unknown",
     ...canonicalIssue.keywords.flatMap((keyword) => ["--keyword", keyword]),
   ];
 

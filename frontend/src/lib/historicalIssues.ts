@@ -32,7 +32,20 @@ export interface HistoricalIssueEvent {
   eventDate: string;
   name: string;
   keywords: string[];
+  category: string;
+  impact: "positive" | "negative" | "neutral" | "mixed" | "unknown";
   similarityScore: number;
+  similarityComponents: {
+    primaryCoverage: number;
+    eventCoverage: number;
+    articleCoverage: number;
+    topicContextCoverage: number;
+    contextCoverage: number;
+    keywordScore: number;
+    sectorAffinity: number;
+    categoryAffinity: number | null;
+    impactAffinity: number | null;
+  };
   matchedKeywords: string[];
   similarityReasons: string[];
   articleCount: number;
@@ -59,6 +72,8 @@ export interface HistoricalIssueAnalysis {
     keywords: string[];
     coreKeywords: string[];
     searchKeywords: string[];
+    category: string;
+    impact: "positive" | "negative" | "neutral" | "mixed" | "unknown";
   };
   search: {
     storedEventCount: number;
@@ -68,6 +83,7 @@ export interface HistoricalIssueAnalysis {
     naverCallCount: number;
     minimumSources: number;
     minimumSimilarity: number;
+    cacheTtlHours: number;
     candidateBefore: string;
     currentEventCooldownDays: number;
   };

@@ -1,14 +1,14 @@
 from __future__ import annotations
 
 import unittest
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from collector.clients.naver import NaverCredentials, NaverNewsClient
 from collector.companies import get_company
 from collector.historical_news.planner import build_issue_news_query_plan
-from collector.jobs.backfill_issue_news import run
+from collector.jobs.backfill_issue_news import _cache_is_fresh, run
 from collector.sources.base import SourceSearchResult
 
 
@@ -98,6 +98,17 @@ class IssueNewsPlannerTest(unittest.TestCase):
 
 
 class IssueNewsBackfillTest(unittest.TestCase):
+    def test_cache_expires_after_quality_refresh_window(self) -> None:
+        now = datetime.now(timezone.utc)
+
+        self.assertTrue(_cache_is_fresh({"created_at": now.isoformat()}))
+        self.assertFalse(
+            _cache_is_fresh(
+                {"created_at": (now - timedelta(hours=25)).isoformat()}
+            )
+        )
+        self.assertFalse(_cache_is_fresh({"created_at": "invalid"}))
+
     def test_stops_after_one_own_and_three_external_company_proxies(self) -> None:
         responses = {
             ("삼성전자 반도체 수출 규제", 1): [

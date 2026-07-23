@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from datetime import date
 
 from collector.historical_events.service import (
@@ -42,6 +43,18 @@ def _json_output(payload: dict[str, object]) -> str:
     return json.dumps(payload, ensure_ascii=True)
 
 
+def _diagnostic_output(error: Exception) -> str:
+    """비밀값이나 원문 오류 메시지 없이 운영 진단 정보를 남긴다."""
+
+    return _json_output(
+        {
+            "event": "historical_issue_analysis_failed",
+            "exceptionType": type(error).__name__,
+            "sqlState": getattr(error, "sqlstate", None),
+        }
+    )
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--stock-code", required=True)
@@ -51,6 +64,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--name", required=True)
     parser.add_argument("--topic-label", default="")
     parser.add_argument("--keyword", action="append", required=True)
+    parser.add_argument("--category", default="")
+    parser.add_argument("--impact", default="unknown")
     return parser.parse_args()
 
 
@@ -66,9 +81,12 @@ def main() -> None:
                 name=args.name,
                 topic_label=args.topic_label,
                 keywords=tuple(args.keyword),
+                category=args.category,
+                impact=args.impact,
             )
         )
     except Exception as error:
+        print(_diagnostic_output(error), file=sys.stderr)
         print(_json_output(_failure_payload(error)))
         raise SystemExit(1)
     print(_json_output({"success": True, "data": result}))

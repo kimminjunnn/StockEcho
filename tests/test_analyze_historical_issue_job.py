@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import unittest
 
-from collector.jobs.analyze_historical_issue import _failure_payload, _json_output
+from collector.jobs.analyze_historical_issue import (
+    _diagnostic_output,
+    _failure_payload,
+    _json_output,
+)
 
 
 class HistoricalIssueJobFailureTests(unittest.TestCase):
@@ -44,6 +48,14 @@ class HistoricalIssueJobFailureTests(unittest.TestCase):
 
         encoded = output.encode("cp949")
         self.assertIn(b"\\u22ef", encoded)
+
+    def test_diagnostic_output_exposes_type_but_not_error_message(self) -> None:
+        output = _diagnostic_output(
+            RuntimeError("database password was accidentally included")
+        )
+
+        self.assertIn("RuntimeError", output)
+        self.assertNotIn("password", output)
 
 
 if __name__ == "__main__":

@@ -7,7 +7,7 @@ import hashlib
 import json
 import re
 from collections import Counter, defaultdict
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Sequence
 from urllib.parse import urlparse
@@ -22,7 +22,8 @@ from collector.sources.base import NewsSource
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-SCHEMA_VERSION = "issue-news-backfill-v4"
+SCHEMA_VERSION = "issue-news-backfill-v5"
+CACHE_TTL_HOURS = 24
 KST = ZoneInfo("Asia/Seoul")
 TOKEN_PATTERN = re.compile(r"[가-힣a-z0-9]+", re.IGNORECASE)
 EVENT_KEYWORD_NOISE = {
@@ -44,21 +45,48 @@ def _search_id(
     phrases: Sequence[str],
     before: date,
     *,
+    source_name: str,
+    display: int,
+    max_pages_per_query: int,
+    max_total_calls: int,
     result_limit: int,
     external_result_limit: int | None,
+    minimum_sources: int,
+    max_peers: int,
 ) -> str:
     value = "|".join(
         (
             SCHEMA_VERSION,
             stock_code,
             before.isoformat(),
+            source_name,
+            str(display),
+            str(max_pages_per_query),
+            str(max_total_calls),
             str(result_limit),
             str(external_result_limit),
+            str(minimum_sources),
+            str(max_peers),
             *phrases,
         )
     )
     digest = hashlib.sha256(value.encode("utf-8")).hexdigest()[:20]
     return f"issue_search_{digest}"
+
+
+def _cache_is_fresh(payload: dict[str, Any]) -> bool:
+    created_at = str(payload.get("created_at", ""))
+    if not created_at:
+        return False
+    try:
+        created = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    if created.tzinfo is None:
+        created = created.replace(tzinfo=timezone.utc)
+    return datetime.now(timezone.utc) - created <= timedelta(
+        hours=CACHE_TTL_HOURS
+    )
 
 
 def _local_date(value: str) -> date:
@@ -248,13 +276,20 @@ def run(
         stock_code,
         plan.phrases,
         before,
+        source_name=source_name,
+        display=display,
+        max_pages_per_query=max_pages_per_query,
+        max_total_calls=max_total_calls,
         result_limit=result_limit,
         external_result_limit=external_result_limit,
+        minimum_sources=minimum_sources,
+        max_peers=max_peers,
     )
     output_path = _summary_path(project_root, search_id)
     if output_path.exists() and not refresh:
         cached = json.loads(output_path.read_text(encoding="utf-8"))
-        return {**cached, "cache_hit": True}
+        if _cache_is_fresh(cached):
+            return {**cached, "cache_hit": True}
 
     source = source or load_source(source_name)
     event_sources: dict[tuple[str, date], set[str]] = defaultdict(set)
@@ -382,6 +417,7 @@ def run(
         },
         "call_count": len(collection_calls),
         "max_total_calls": max_total_calls,
+        "cache_ttl_hours": CACHE_TTL_HOURS,
         "calls": collection_calls,
         "qualifying_event_proxies": events,
         "own_company_ready": own_ready(),

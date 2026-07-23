@@ -16,6 +16,9 @@ def topic(
     keywords: list[str],
     title: str,
     article_count: int = 2,
+    sector: str = "",
+    category: str = "",
+    impact: str = "unknown",
 ) -> dict:
     article = {
         "document_id": f"doc-{event_id}",
@@ -26,6 +29,7 @@ def topic(
     return {
         "stock_code": stock_code,
         "company_name": company_name,
+        "sector": sector,
         "topic_id": topic_id,
         "name": " · ".join(keywords),
         "keywords": keywords,
@@ -36,6 +40,8 @@ def topic(
                 "event_date": event_date,
                 "name": " · ".join(keywords),
                 "keywords": keywords,
+                "category": category,
+                "impact": impact,
                 "article_count": article_count,
                 "source_count": 2,
                 "representative_article": article,
@@ -235,6 +241,178 @@ class HistoricalEventSearchTest(unittest.TestCase):
 
         self.assertEqual(result["matches"], [])
         self.assertEqual(result["candidate_count"], 0)
+
+    def test_requires_two_primary_keywords_for_multi_term_query(self) -> None:
+        unrelated = topic(
+            "000660",
+            "SK하이닉스",
+            topic_id="topic-bonus",
+            event_id="event-bonus",
+            event_date="2025-01-01",
+            keywords=["성과급", "지급", "확대"],
+            title="SK하이닉스 성과급 지급 확대",
+        )
+
+        result = search_historical_events(
+            [unrelated],
+            target_stock_code="005930",
+            keywords=["성과급", "협상"],
+            before=date(2026, 7, 22),
+        )
+
+        self.assertEqual(result["matches"], [])
+
+    def test_context_keywords_break_primary_keyword_tie(self) -> None:
+        generic = topic(
+            "000270",
+            "기아",
+            topic_id="topic-generic",
+            event_id="event-generic",
+            event_date="2025-01-01",
+            keywords=["성과급", "협상"],
+            title="기아 성과급 협상",
+        )
+        contextual = topic(
+            "005380",
+            "현대차",
+            topic_id="topic-context",
+            event_id="event-context",
+            event_date="2025-01-01",
+            keywords=["성과급", "협상", "노사", "결렬"],
+            title="현대차 노사 성과급 협상 결렬",
+        )
+
+        result = search_historical_events(
+            [generic, contextual],
+            target_stock_code="005930",
+            keywords=["성과급", "협상"],
+            context_keywords=["성과급", "협상", "노사", "결렬"],
+            before=date(2026, 7, 22),
+            limit=2,
+        )
+
+        self.assertEqual(result["matches"][0]["event_id"], "event-context")
+        self.assertEqual(
+            result["matches"][0]["matched_context_keywords"],
+            ["결렬", "노사"],
+        )
+
+    def test_sector_affinity_is_a_weak_ranking_prior(self) -> None:
+        unrelated = topic(
+            "000270",
+            "기아",
+            topic_id="topic-car",
+            event_id="event-car",
+            event_date="2025-01-01",
+            keywords=["수출", "규제"],
+            title="기아 수출 규제",
+            sector="자동차",
+        )
+        related = topic(
+            "042700",
+            "한미반도체",
+            topic_id="topic-semiconductor",
+            event_id="event-semiconductor",
+            event_date="2025-01-01",
+            keywords=["수출", "규제"],
+            title="한미반도체 수출 규제",
+            sector="반도체 장비",
+        )
+
+        result = search_historical_events(
+            [unrelated, related],
+            target_stock_code="005930",
+            keywords=["수출", "규제"],
+            target_sector="반도체 전자",
+            before=date(2026, 7, 22),
+            limit=2,
+        )
+
+        self.assertEqual(
+            [match["event_id"] for match in result["matches"]],
+            ["event-semiconductor", "event-car"],
+        )
+        self.assertGreater(
+            result["matches"][0]["similarity_score"],
+            result["matches"][1]["similarity_score"],
+        )
+
+    def test_event_category_reranks_lexically_equal_candidates(self) -> None:
+        different_type = topic(
+            "000270",
+            "기아",
+            topic_id="topic-product",
+            event_id="event-product",
+            event_date="2025-01-01",
+            keywords=["배터리", "화재"],
+            title="기아 배터리 화재",
+            category="신제품·출시",
+        )
+        same_type = topic(
+            "373220",
+            "LG에너지솔루션",
+            topic_id="topic-incident",
+            event_id="event-incident",
+            event_date="2025-01-01",
+            keywords=["배터리", "화재"],
+            title="LG에너지솔루션 배터리 화재",
+            category="사고·분쟁",
+        )
+
+        result = search_historical_events(
+            [different_type, same_type],
+            target_stock_code="005930",
+            keywords=["배터리", "화재"],
+            target_category="사고·분쟁",
+            before=date(2026, 7, 22),
+            limit=2,
+        )
+
+        self.assertEqual(result["matches"][0]["event_id"], "event-incident")
+        self.assertEqual(
+            result["matches"][0]["similarity_components"]["categoryAffinity"],
+            1.0,
+        )
+
+    def test_known_impact_direction_reranks_same_category(self) -> None:
+        opposite = topic(
+            "000270",
+            "기아",
+            topic_id="topic-positive",
+            event_id="event-positive",
+            event_date="2025-01-01",
+            keywords=["공급", "계약"],
+            title="기아 공급 계약",
+            category="수주·계약",
+            impact="positive",
+        )
+        same_direction = topic(
+            "005380",
+            "현대차",
+            topic_id="topic-negative",
+            event_id="event-negative",
+            event_date="2025-01-01",
+            keywords=["공급", "계약"],
+            title="현대차 공급 계약",
+            category="수주·계약",
+            impact="negative",
+        )
+
+        result = search_historical_events(
+            [opposite, same_direction],
+            target_stock_code="005930",
+            keywords=["공급", "계약"],
+            target_category="수주·계약",
+            target_impact="negative",
+            before=date(2026, 7, 22),
+            limit=2,
+        )
+
+        self.assertEqual(result["matches"][0]["event_id"], "event-negative")
+        self.assertEqual(
+            result["matches"][0]["similarity_components"]["impactAffinity"],
+            1.0,
+        )
 
     def test_representative_article_is_reselected_for_current_keywords(self) -> None:
         candidate = topic(

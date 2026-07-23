@@ -106,7 +106,9 @@ data/processed/keyword_seed/<stockCode>_articles.jsonl
 
 `--before` 당일과 미래 기사는 과거 후보 집계에서 제외한다. 기본적으로 `반도체 수출 규제`와 보수적인 동의어 변형인 `반도체 수출 통제`를 만들고, 자사 날짜별 Event proxy 1건과 서로 다른 외부 기업 2곳을 확보하면 호출을 멈춘다. 한 날짜의 Event proxy는 서로 다른 출처가 기본 2곳 이상이어야 한다.
 
-한 검색어는 최대 3페이지, 전체 작업은 최대 12회만 호출한다. 결과는 다음 경로에 저장하며 동일한 종목·키워드·기준일 요청은 저장 결과를 재사용한다. 다시 호출하려면 `--refresh`를 사용한다.
+한 검색어는 최대 3페이지, 전체 작업은 최대 12회만 호출한다. 결과는 다음
+경로에 저장하며 동일한 종목·키워드·기준일·품질 설정의 결과는 24시간
+재사용한다. 즉시 다시 호출하려면 `--refresh`를 사용한다.
 
 ```text
 data/processed/historical_search/issue_search_<hash>.json
@@ -121,9 +123,11 @@ data/state/news/<source>/<queryId>__sim__<start>.json
 같은 사건의 연속 보도를 다시 과거 사례로 고르는 일을 줄이기 위해 제외한다.
 제품 결과는 자사 Event 최대 1건과 서로 다른 외부 기업 Event 최대 3건을
 선택하며, 품질 기준을 통과한 사례가 부족하면 개수를 임의로 채우지 않는다.
+최종 선별은 짧은 NAVER 검색어뿐 아니라 현재 Event의 최대 6개 문맥어,
+사건 유형·알려진 영향 방향과 지원 종목 업종의 약한 prior를 함께 사용한다.
 결과와 검색·가격 조회 여부는 결정적 `cache_key`로
-`historical_issue_analyses`에 저장되므로 동일 요청은 NAVER를 다시 호출하지
-않는다.
+`historical_issue_analyses`에 저장하며, 동일 요청은 24시간 동안 또는 Event
+corpus가 갱신되기 전까지 NAVER를 다시 호출하지 않는다.
 
 ```bash
 .venv/bin/python -m collector.jobs.analyze_historical_issue \

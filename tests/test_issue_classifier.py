@@ -85,6 +85,14 @@ class IssueClassifierTests(unittest.TestCase):
     def test_fallback_category_uses_fixed_taxonomy(self) -> None:
         self.assertEqual(fallback_category(issue()), "수주·계약")
 
+    def test_labor_negotiation_is_classified_as_dispute(self) -> None:
+        labor_issue = issue()
+        labor_issue["name"] = "성과급 협상 결렬"
+        labor_issue["topic_name"] = "노사 갈등"
+        labor_issue["keywords"] = ["성과급 협상", "노조 쟁의"]
+
+        self.assertEqual(fallback_category(labor_issue), "사고·분쟁")
+
     def test_strong_category_hint_uses_central_issue_name(self) -> None:
         value = issue()
         value["name"] = "노조 파업 장기화"

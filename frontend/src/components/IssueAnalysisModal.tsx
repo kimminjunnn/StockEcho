@@ -167,7 +167,7 @@ function EventEvidence({
                 <p className="text-xl font-extrabold text-primary">
                   {Math.round(event.similarityScore * 100)}%
                 </p>
-                <p className="text-[10px] text-outline">유사도</p>
+                <p className="text-[10px] text-outline">규칙 유사도</p>
               </div>
             </div>
             <p className="mt-sm line-clamp-2 text-xs font-bold leading-relaxed text-on-surface-variant">

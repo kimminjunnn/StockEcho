@@ -20,19 +20,27 @@ from collector.historical_events.keywords import (
     extract_search_keywords,
 )
 from collector.historical_events.price_reaction import calculate_trading_day_returns
-from collector.historical_events.search import search_historical_events
+from collector.historical_events.search import (
+    SCHEMA_VERSION as SEARCH_SCHEMA_VERSION,
+    search_historical_events,
+)
 from collector.jobs.backfill_issue_news import run as backfill_issue_news
 from collector.repositories.local import read_jsonl
 from collector.repositories.supabase import PROJECT_ROOT, connect, upsert_supported_stocks
+from collector.topic_modeling.issue_classifier import (
+    CATEGORIES,
+    fallback_category,
+)
 
 
-SCHEMA_VERSION = "historical-issue-analysis-v6"
+SCHEMA_VERSION = "historical-issue-analysis-v7"
 RESULT_LIMIT = 4
 OTHER_COMPANY_RESULT_LIMIT = 3
 MINIMUM_SOURCES = 2
 MINIMUM_SIMILARITY = 0.4
 PRICE_LOOKAHEAD_DAYS = 90
 CURRENT_EVENT_COOLDOWN_DAYS = 2
+CACHE_TTL_HOURS = 24
 
 
 def _limit_result_mix(
@@ -63,6 +71,8 @@ class HistoricalIssueRequest:
     name: str
     topic_label: str
     keywords: tuple[str, ...]
+    category: str = ""
+    impact: str = "unknown"
 
     def validate(self) -> None:
         get_company(self.stock_code)
@@ -74,6 +84,16 @@ class HistoricalIssueRequest:
             raise ValueError("현재 Event 이름이 필요합니다.")
         if not any(keyword.strip() for keyword in self.keywords):
             raise ValueError("현재 Event 키워드가 하나 이상 필요합니다.")
+        if self.category and self.category not in CATEGORIES:
+            raise ValueError(f"지원하지 않는 사건 유형입니다: {self.category}")
+        if self.impact not in {
+            "positive",
+            "negative",
+            "neutral",
+            "mixed",
+            "unknown",
+        }:
+            raise ValueError(f"지원하지 않는 영향 방향입니다: {self.impact}")
 
 
 def _cache_key(
@@ -83,6 +103,7 @@ def _cache_key(
 ) -> str:
     payload = {
         "schema_version": SCHEMA_VERSION,
+        "search_schema_version": SEARCH_SCHEMA_VERSION,
         "stock_code": request.stock_code,
         "topic_id": request.topic_id,
         "event_id": request.event_id,
@@ -91,11 +112,14 @@ def _cache_key(
         "topic_label": request.topic_label.strip(),
         "core_keywords": list(core_keywords),
         "search_keywords": list(search_keywords),
+        "category": request.category,
+        "impact": request.impact,
         "minimum_sources": MINIMUM_SOURCES,
         "minimum_similarity": MINIMUM_SIMILARITY,
         "result_limit": RESULT_LIMIT,
         "other_company_result_limit": OTHER_COMPANY_RESULT_LIMIT,
         "current_event_cooldown_days": CURRENT_EVENT_COOLDOWN_DAYS,
+        "cache_ttl_hours": CACHE_TTL_HOURS,
     }
     digest = hashlib.sha256(
         json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
@@ -137,6 +161,10 @@ def _event_upsert_values(
     *,
     stock_code: str,
     topic_id: str,
+    topic_name: str,
+    topic_keywords: Sequence[str],
+    event_category: str,
+    impact_direction: str,
     model_version: str,
     origin: str,
 ) -> tuple[Any, ...]:
@@ -148,6 +176,10 @@ def _event_upsert_values(
         str(event["event_id"]),
         stock_code,
         topic_id,
+        topic_name,
+        Jsonb(list(topic_keywords)),
+        event_category,
+        impact_direction,
         event["event_date"],
         event.get("name") or representative.get("title") or "과거 이슈",
         Jsonb(list(event.get("keywords") or [])),
@@ -167,13 +199,21 @@ def _upsert_event_rows(connection, values: Sequence[tuple[Any, ...]]) -> None:
         cursor.executemany(
             """
             insert into public.historical_events (
-              event_id, stock_code, topic_id, event_date, name, keywords,
+              event_id, stock_code, topic_id, topic_name, topic_keywords,
+              event_category, impact_direction, event_date, name, keywords,
               article_count, source_count, representative_article, articles,
               model_version, origin
-            ) values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ) values (
+              %s, %s, %s, %s, %s, %s, %s, %s,
+              %s, %s, %s, %s, %s, %s, %s, %s
+            )
             on conflict (event_id) do update set
               stock_code = excluded.stock_code,
               topic_id = excluded.topic_id,
+              topic_name = excluded.topic_name,
+              topic_keywords = excluded.topic_keywords,
+              event_category = excluded.event_category,
+              impact_direction = excluded.impact_direction,
               event_date = excluded.event_date,
               name = excluded.name,
               keywords = excluded.keywords,
@@ -184,6 +224,39 @@ def _upsert_event_rows(connection, values: Sequence[tuple[Any, ...]]) -> None:
               model_version = excluded.model_version,
               origin = excluded.origin,
               updated_at = now()
+            where (
+              historical_events.stock_code,
+              historical_events.topic_id,
+              historical_events.topic_name,
+              historical_events.topic_keywords,
+              historical_events.event_category,
+              historical_events.impact_direction,
+              historical_events.event_date,
+              historical_events.name,
+              historical_events.keywords,
+              historical_events.article_count,
+              historical_events.source_count,
+              historical_events.representative_article,
+              historical_events.articles,
+              historical_events.model_version,
+              historical_events.origin
+            ) is distinct from (
+              excluded.stock_code,
+              excluded.topic_id,
+              excluded.topic_name,
+              excluded.topic_keywords,
+              excluded.event_category,
+              excluded.impact_direction,
+              excluded.event_date,
+              excluded.name,
+              excluded.keywords,
+              excluded.article_count,
+              excluded.source_count,
+              excluded.representative_article,
+              excluded.articles,
+              excluded.model_version,
+              excluded.origin
+            )
             """,
             values,
         )
@@ -206,6 +279,19 @@ def sync_saved_events(connection, *, project_root: Path = PROJECT_ROOT) -> int:
                         event,
                         stock_code=str(topic["stock_code"]),
                         topic_id=str(topic.get("topic_id", "")),
+                        topic_name=str(topic.get("name", "")),
+                        topic_keywords=list(topic.get("keywords") or []),
+                        event_category=fallback_category(
+                            {
+                                "name": event.get("name", ""),
+                                "topic_name": topic.get("name", ""),
+                                "keywords": [
+                                    *list(event.get("keywords") or []),
+                                    *list(topic.get("keywords") or []),
+                                ],
+                            }
+                        ),
+                        impact_direction="unknown",
                         model_version=str(topic.get("model_version", "")),
                         origin="topic_model",
                     )
@@ -270,6 +356,19 @@ def sync_saved_events(connection, *, project_root: Path = PROJECT_ROOT) -> int:
                     event,
                     stock_code=str(row["stock_code"]),
                     topic_id=str(issue.get("topicId", "")),
+                    topic_name=str(issue.get("topicLabel", "")),
+                    topic_keywords=[],
+                    event_category=str(
+                        issue.get("category")
+                        or fallback_category(
+                            {
+                                "name": issue.get("name", ""),
+                                "topic_name": issue.get("topicLabel", ""),
+                                "keywords": issue.get("keywords", []),
+                            }
+                        )
+                    ),
+                    impact_direction=str(issue.get("impact") or "unknown"),
                     model_version=str(row["model_version"]),
                     origin="analysis_snapshot",
                 )
@@ -283,7 +382,7 @@ def _load_saved_topics(connection, *, before: date) -> list[dict[str, Any]]:
     with connection.cursor(row_factory=dict_row) as cursor:
         cursor.execute(
             """
-            select event.*, stock.name as company_name
+            select event.*, stock.name as company_name, stock.sector
             from public.historical_events event
             join public.stocks stock using (stock_code)
             where event.event_date < %s
@@ -301,9 +400,10 @@ def _load_saved_topics(connection, *, before: date) -> list[dict[str, Any]]:
         {
             "stock_code": row["stock_code"],
             "company_name": row["company_name"],
+            "sector": row["sector"],
             "topic_id": row["topic_id"] or f"event-topic:{row['event_id']}",
-            "name": row["name"],
-            "keywords": list(row["keywords"] or []),
+            "name": row["topic_name"],
+            "keywords": list(row["topic_keywords"] or []),
             "is_outlier": False,
             "origin": row["origin"],
             "events": [
@@ -312,6 +412,8 @@ def _load_saved_topics(connection, *, before: date) -> list[dict[str, Any]]:
                     "event_date": row["event_date"].isoformat(),
                     "name": row["name"],
                     "keywords": list(row["keywords"] or []),
+                    "category": row["event_category"],
+                    "impact": row["impact_direction"],
                     "article_count": row["article_count"],
                     "source_count": row["source_count"],
                     "representative_article": row["representative_article"],
@@ -416,6 +518,15 @@ def _save_backfill_events(
             event,
             stock_code=str(event["stock_code"]),
             topic_id=f"naver-search:{event['event_id']}",
+            topic_name="",
+            topic_keywords=[],
+            event_category=fallback_category(
+                {
+                    "name": event.get("name", ""),
+                    "keywords": event.get("keywords", []),
+                }
+            ),
+            impact_direction="unknown",
             model_version=SCHEMA_VERSION,
             origin="naver_backfill",
         )
@@ -527,11 +638,20 @@ def _cached_result(connection, cache_key: str) -> dict[str, Any] | None:
     with connection.cursor(row_factory=dict_row) as cursor:
         cursor.execute(
             """
-            select result
-            from public.historical_issue_analyses
-            where cache_key = %s and status = 'ready' and result is not null
+            select analysis.result
+            from public.historical_issue_analyses analysis
+            where analysis.cache_key = %s
+              and analysis.status = 'ready'
+              and analysis.result is not null
+              and analysis.updated_at >=
+                now() - (%s * interval '1 hour')
+              and not exists (
+                select 1
+                from public.historical_events event
+                where event.updated_at > analysis.updated_at
+              )
             """,
-            (cache_key,),
+            (cache_key, CACHE_TTL_HOURS),
         )
         row = cursor.fetchone()
     return dict(row["result"]) if row else None
@@ -572,6 +692,8 @@ def _mark_processing(
                         "keywords": list(request.keywords),
                         "coreKeywords": list(core_keywords),
                         "searchKeywords": list(search_keywords),
+                        "category": request.category,
+                        "impact": request.impact,
                     }
                 ),
             ),
@@ -652,6 +774,10 @@ def analyze_historical_issue(
                 saved_topics,
                 target_stock_code=request.stock_code,
                 keywords=search_keywords,
+                context_keywords=core_keywords,
+                target_sector=company.sector,
+                target_category=request.category,
+                target_impact=request.impact,
                 before=candidate_before,
                 current_event_id=request.event_id,
                 limit=RESULT_LIMIT,
@@ -683,6 +809,10 @@ def analyze_historical_issue(
                         saved_topics,
                         target_stock_code=request.stock_code,
                         keywords=search_keywords,
+                        context_keywords=core_keywords,
+                        target_sector=company.sector,
+                        target_category=request.category,
+                        target_impact=request.impact,
                         before=candidate_before,
                         current_event_id=request.event_id,
                         limit=RESULT_LIMIT,
@@ -708,7 +838,12 @@ def analyze_historical_issue(
                         "eventDate": match["event_date"],
                         "name": match["name"],
                         "keywords": list(match["keywords"]),
+                        "category": match["category"],
+                        "impact": match["impact"],
                         "similarityScore": match["similarity_score"],
+                        "similarityComponents": dict(
+                            match["similarity_components"]
+                        ),
                         "matchedKeywords": list(match["matched_keywords"]),
                         "similarityReasons": list(
                             match["similarity_reasons"]
@@ -758,6 +893,8 @@ def analyze_historical_issue(
                     "keywords": list(request.keywords),
                     "coreKeywords": core_keywords,
                     "searchKeywords": search_keywords,
+                    "category": request.category,
+                    "impact": request.impact,
                 },
                 "search": {
                     "storedEventCount": len(saved_topics),
@@ -775,6 +912,7 @@ def analyze_historical_issue(
                     ),
                     "minimumSources": MINIMUM_SOURCES,
                     "minimumSimilarity": MINIMUM_SIMILARITY,
+                    "cacheTtlHours": CACHE_TTL_HOURS,
                     "candidateBefore": candidate_before.isoformat(),
                     "currentEventCooldownDays": CURRENT_EVENT_COOLDOWN_DAYS,
                 },
