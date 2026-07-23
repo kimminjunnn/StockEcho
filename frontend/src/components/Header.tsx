@@ -64,9 +64,6 @@ export default function Header() {
               구글로 로그인
             </button>
           )}
-
-          <button className="material-symbols-outlined p-sm hover:bg-surface-container-low rounded-full transition-colors ml-xs">notifications</button>
-          <button className="material-symbols-outlined md:hidden p-sm hover:bg-surface-container-low rounded-full transition-colors">menu</button>
         </div>
       </div>
     </header>
