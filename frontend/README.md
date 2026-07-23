@@ -44,6 +44,14 @@ npm run dev
 삼성전자와 SK하이닉스는 Top 3를 표시하고, 다른 종목은 데이터 준비 상태를 표시합니다.
 보유 종목과 수량은 브라우저 `localStorage`에만 저장됩니다.
 
+주요 이슈 카드의 `과거 유사 사례 분석`은
+`POST /api/stocks/<stockCode>/historical-issues`를 호출합니다. Route Handler는
+현재 저장된 Event와 요청을 대조하고 같은 서버의 collector Python을 실행합니다.
+배포 환경의 Python 위치가 저장소의 `.venv/bin/python` 또는 `venv/bin/python`과
+다르면 서버 전용 `STOCKECHO_PYTHON`으로 지정합니다. 화면은 실제 대표 기사,
+출처 수, 유사 근거와 D+1·D+5·D+15·D+30 거래일 수익률을 표시하며 부족한
+사례나 가격을 임의로 채우지 않습니다.
+
 ## 기술 스택
 - **프레임워크**: Next.js 16 (App Router)
 - **언어**: TypeScript

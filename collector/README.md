@@ -115,6 +115,32 @@ data/state/news/<source>/<queryId>__sim__<start>.json
 
 수집 후 관련 기업에 `reevaluate_company_news`를 실행하고 BERTopic/Event 산출물을 다시 생성해야 실제 과거 Event 검색 대상에 포함된다.
 
+제품의 `과거 유사 사례 분석` 요청은 현재 카드의 Topic/Event와 키프레이즈를
+`analyze_historical_issue`에 전달한다. Supabase의 `historical_events`를 먼저
+검색하고 부족한 경우에만 위 NAVER backfill을 실행한다. 현재 Event 직전 2일은
+같은 사건의 연속 보도를 다시 과거 사례로 고르는 일을 줄이기 위해 제외한다.
+제품 결과는 자사 Event 최대 1건과 서로 다른 외부 기업 Event 최대 3건을
+선택하며, 품질 기준을 통과한 사례가 부족하면 개수를 임의로 채우지 않는다.
+결과와 검색·가격 조회 여부는 결정적 `cache_key`로
+`historical_issue_analyses`에 저장되므로 동일 요청은 NAVER를 다시 호출하지
+않는다.
+
+```bash
+.venv/bin/python -m collector.jobs.analyze_historical_issue \
+  --stock-code 005930 \
+  --topic-id <topic-id> \
+  --event-id <event-id> \
+  --event-date 2026-07-23 \
+  --name "현재 주요 이슈명" \
+  --topic-label "현재 Topic 이름" \
+  --keyword "핵심 키프레이즈"
+```
+
+과거 Event별 가격은 KIS 일봉을 `market_daily`에 캐시한 뒤 Event 기준 거래일
+종가와 다음 1·5·15·30번째 거래일 종가로 계산한다. 장 마감 후·휴일·시각
+불확실 보도는 다음 거래일을 기준으로 하며, 거래일이 아직 도달하지 않았거나
+가격이 누락되면 해당 구간을 `partial` 또는 `unavailable`로 반환한다.
+
 ## BERTopic Topic/Event 실험
 
 수집기와 분리된 실험 의존성을 설치한 뒤 종목별 corpus를 실행한다.
