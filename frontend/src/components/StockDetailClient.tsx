@@ -75,13 +75,14 @@ export default function StockDetailClient({
     return () => { isCancelled = true; };
   }, [chartPeriod, stockCode, initialChart]);
 
-  // Polling for real-time price and orderbook (every 5 seconds)
+  // Polling for real-time price, orderbook, and investor sentiment (every 5 seconds)
   useEffect(() => {
     const fetchRealtimeData = async () => {
       try {
-        const [priceRes, obRes] = await Promise.all([
+        const [priceRes, obRes, invRes] = await Promise.all([
           fetch(`/api/stock/price/${stockCode}`),
-          fetch(`/api/stock/orderbook/${stockCode}`)
+          fetch(`/api/stock/orderbook/${stockCode}`),
+          fetch(`/api/stock/investor/${stockCode}`)
         ]);
         
         if (priceRes.ok) {
@@ -93,18 +94,23 @@ export default function StockDetailClient({
           const oData = await obRes.json();
           if (oData.success && oData.data) setOrderbook(oData.data);
         }
+
+        if (invRes.ok) {
+          const iData = await invRes.json();
+          if (iData.success && iData.data) setInvestorData(iData.data);
+        }
       } catch (e) {
         console.error("Polling error:", e);
       }
     };
 
-    if (!initialPrice || !initialOrderbook) {
+    if (!initialPrice || !initialOrderbook || !initialInvestor) {
       fetchRealtimeData();
     }
 
     const intervalId = setInterval(fetchRealtimeData, 5000);
     return () => clearInterval(intervalId);
-  }, [stockCode, initialPrice, initialOrderbook]);
+  }, [stockCode, initialPrice, initialOrderbook, initialInvestor]);
 
   // Formatters
   const formatNum = (numStr: string | undefined) => {
@@ -144,9 +150,42 @@ export default function StockDetailClient({
   const dayLow = priceData ? priceData.stck_lwpr : '0';
   const tradeVol = priceData ? priceData.acml_vol : '0';
 
-  const individualNet = investorData && investorData.length > 0 ? investorData[0].prsn_ntby_qty : '0';
-  const foreignNet = investorData && investorData.length > 0 ? investorData[0].frgn_ntby_qty : '0';
-  const instNet = investorData && investorData.length > 0 ? investorData[0].orgn_ntby_qty : '0';
+  // Extract investor data: find the most recent trading day with non-empty investor net buy quantity
+  const validInvestorItem = Array.isArray(investorData)
+    ? investorData.find(
+        (item: any) =>
+          item &&
+          item.prsn_ntby_qty !== undefined &&
+          item.prsn_ntby_qty !== null &&
+          item.prsn_ntby_qty !== ''
+      )
+    : null;
+
+  const individualNet = validInvestorItem?.prsn_ntby_qty || '0';
+  const foreignNet = validInvestorItem?.frgn_ntby_qty || '0';
+  const instNet = validInvestorItem?.orgn_ntby_qty || '0';
+
+  const indVal = parseInt(individualNet, 10) || 0;
+  const forVal = parseInt(foreignNet, 10) || 0;
+  const instVal = parseInt(instNet, 10) || 0;
+  const maxAbsVal = Math.max(Math.abs(indVal), Math.abs(forVal), Math.abs(instVal), 1);
+
+  const getWidthPercent = (val: number) => {
+    if (val === 0) return '0%';
+    const pct = Math.min(100, Math.max(12, Math.round((Math.abs(val) / maxAbsVal) * 100)));
+    return `${pct}%`;
+  };
+
+  const formatInvestorNum = (valStr: string | undefined) => {
+    if (!valStr) return '0';
+    const val = parseInt(valStr, 10);
+    if (isNaN(val) || val === 0) return '0';
+    return val > 0 ? `+${val.toLocaleString()}` : val.toLocaleString();
+  };
+
+  const investorDateLabel = validInvestorItem?.stck_bsop_date
+    ? `${validInvestorItem.stck_bsop_date.slice(4, 6)}.${validInvestorItem.stck_bsop_date.slice(6, 8)} 기준`
+    : '';
 
   // HTS Link
   const htsLink = "https://securities.koreainvestment.com/main/Main.jsp";
@@ -351,37 +390,42 @@ export default function StockDetailClient({
             <div className="flex items-center justify-between px-4 py-2 bg-gray-50 border-b border-gray-100">
               <div className="flex items-center gap-2">
                 <svg className="w-4 h-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2"></path></svg>
-                <div className="flex items-center gap-1 px-2 py-0.5 bg-gray-100 text-gray-600 text-[10px] font-bold rounded">개인·외국인·기관 <span className="ml-1">×</span></div>
+                <div className="flex items-center gap-1 px-2 py-0.5 bg-gray-100 text-gray-600 text-[10px] font-bold rounded">
+                  개인·외국인·기관 <span className="ml-1">×</span>
+                </div>
               </div>
+              {investorDateLabel && (
+                <span className="text-[10px] text-gray-400 font-medium">{investorDateLabel}</span>
+              )}
             </div>
             <div className="p-4 flex flex-col gap-4">
               <div className="flex items-center justify-between">
                 <span className="text-xs text-gray-500 w-12">개인</span>
-                <span className={`text-xs font-bold flex-1 text-right pr-4 ${getInvestorColor(individualNet).split(' ')[1]}`}>
-                  {formatNum(individualNet)}
+                <span className={`text-xs font-bold flex-1 text-right pr-4 ${indVal > 0 ? 'text-chart-up' : indVal < 0 ? 'text-chart-down' : 'text-gray-400'}`}>
+                  {formatInvestorNum(individualNet)}
                 </span>
                 <div className="w-24 h-1.5 bg-gray-100 rounded-full overflow-hidden flex justify-end">
-                  <div className={`h-full ${getInvestorColor(individualNet).split(' ')[0]} ${parseInt(individualNet) > 0 ? 'w-2/3' : 'w-1/4'}`}></div>
+                  <div className={`h-full ${indVal > 0 ? 'bg-chart-up' : indVal < 0 ? 'bg-chart-down' : 'bg-gray-300'}`} style={{ width: getWidthPercent(indVal) }}></div>
                 </div>
               </div>
               
               <div className="flex items-center justify-between">
                 <span className="text-xs text-gray-500 w-12">외국인</span>
-                <span className={`text-xs font-bold flex-1 text-right pr-4 ${getInvestorColor(foreignNet).split(' ')[1]}`}>
-                  {formatNum(foreignNet)}
+                <span className={`text-xs font-bold flex-1 text-right pr-4 ${forVal > 0 ? 'text-chart-up' : forVal < 0 ? 'text-chart-down' : 'text-gray-400'}`}>
+                  {formatInvestorNum(foreignNet)}
                 </span>
                 <div className="w-24 h-1.5 bg-gray-100 rounded-full overflow-hidden flex justify-end">
-                  <div className={`h-full ${getInvestorColor(foreignNet).split(' ')[0]} ${parseInt(foreignNet) > 0 ? 'w-2/3' : 'w-1/4'}`}></div>
+                  <div className={`h-full ${forVal > 0 ? 'bg-chart-up' : forVal < 0 ? 'bg-chart-down' : 'bg-gray-300'}`} style={{ width: getWidthPercent(forVal) }}></div>
                 </div>
               </div>
               
               <div className="flex items-center justify-between">
                 <span className="text-xs text-gray-500 w-12">기관</span>
-                <span className={`text-xs font-bold flex-1 text-right pr-4 ${getInvestorColor(instNet).split(' ')[1]}`}>
-                  {formatNum(instNet)}
+                <span className={`text-xs font-bold flex-1 text-right pr-4 ${instVal > 0 ? 'text-chart-up' : instVal < 0 ? 'text-chart-down' : 'text-gray-400'}`}>
+                  {formatInvestorNum(instNet)}
                 </span>
                 <div className="w-24 h-1.5 bg-gray-100 rounded-full overflow-hidden flex justify-end">
-                  <div className={`h-full ${getInvestorColor(instNet).split(' ')[0]} ${parseInt(instNet) > 0 ? 'w-2/3' : 'w-1/4'}`}></div>
+                  <div className={`h-full ${instVal > 0 ? 'bg-chart-up' : instVal < 0 ? 'bg-chart-down' : 'bg-gray-300'}`} style={{ width: getWidthPercent(instVal) }}></div>
                 </div>
               </div>
             </div>
