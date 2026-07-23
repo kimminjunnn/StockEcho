@@ -1,0 +1,11 @@
+[Unit]
+Description=Run StockEcho news collection hourly
+
+[Timer]
+OnCalendar=*-*-* *:10:00
+RandomizedDelaySec=120
+Persistent=true
+Unit=stockecho-collector.service
+
+[Install]
+WantedBy=timers.target

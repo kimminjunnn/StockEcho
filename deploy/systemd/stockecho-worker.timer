@@ -1,0 +1,12 @@
+[Unit]
+Description=Poll StockEcho analysis queue every five minutes
+
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=5min
+AccuracySec=30s
+Persistent=true
+Unit=stockecho-worker.service
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,22 @@
+[Unit]
+Description=StockEcho news collection and analysis scheduling
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/opt/stockecho/app
+Environment=HOME=/home/ubuntu
+Environment=PYTHONUNBUFFERED=1
+UMask=0077
+ExecStart=/usr/bin/flock -n /run/lock/stockecho-collector.lock /opt/stockecho/venv/bin/python -m collector.jobs.collect_and_schedule --all-supported --display 100
+Nice=10
+CPUWeight=20
+MemoryHigh=700M
+MemoryMax=1000M
+TimeoutStartSec=30min
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full

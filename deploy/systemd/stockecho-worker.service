@@ -1,0 +1,23 @@
+[Unit]
+Description=Process one StockEcho analysis queue message
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/opt/stockecho/app
+Environment=HOME=/home/ubuntu
+Environment=HF_HOME=/home/ubuntu/.cache/huggingface
+Environment=PYTHONUNBUFFERED=1
+UMask=0077
+ExecStart=/usr/bin/flock -n /run/lock/stockecho-worker.lock /opt/stockecho/venv/bin/python -m collector.jobs.run_analysis_worker --once --visibility-timeout 3600
+Nice=15
+CPUWeight=15
+MemoryHigh=1300M
+MemoryMax=1600M
+TimeoutStartSec=30min
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
