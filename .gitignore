@@ -9,3 +9,4 @@ node_modules/
 data/raw/
 data/processed/
 data/state/
+token.json

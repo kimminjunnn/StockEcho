@@ -2,8 +2,16 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
-import StockChart from '@/components/StockChart';
+import dynamic from 'next/dynamic';
 
+const StockChart = dynamic(() => import('@/components/StockChart'), { 
+  ssr: false, 
+  loading: () => (
+    <div className="w-full h-full flex items-center justify-center bg-gray-50/50">
+      <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
+    </div>
+  ) 
+});
 interface StockDetailClientProps {
   stockCode: string;
   stockName: string;
@@ -276,7 +284,7 @@ export default function StockDetailClient({
                   <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
                 </div>
               ) : null}
-              <StockChart data={chartData || []} currentPrice={currentPrice} />
+              <StockChart data={chartData || []} currentPrice={currentPrice} period={chartPeriod} />
               <div className="absolute right-4 top-[32%] w-16 h-6 bg-chart-up flex items-center justify-center text-white text-[11px] font-bold rounded-l z-10 pointer-events-none opacity-90 transition-all duration-300">
                 {currentPrice.toLocaleString()}
               </div>

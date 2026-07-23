@@ -1,5 +1,5 @@
 import React from 'react';
-import { getStockPrice, getStockChartData, getStockInvestorData, getStockOrderbook } from '@/lib/kisApi';
+import { getStockPrice, getStockMinuteChartData, getStockChartData, getStockInvestorData, getStockOrderbook } from '@/lib/kisApi';
 import StockDetailClient from '@/components/StockDetailClient';
 
 export const dynamic = 'force-dynamic';
@@ -33,24 +33,26 @@ export default async function StockDetailPage({ params }: { params: Promise<{ co
   const code = resolvedParams.code;
   const stockName = STOCK_NAMES[code] || "알 수 없는 종목";
 
-  // Fetch initial data from server
+  // Fetch initial data in parallel from server (no sequential delays)
   let initialPrice = null;
   let initialChart = null;
   let initialInvestor = null;
   let initialOrderbook = null;
-  let error = null;
 
   try {
-    const delay = (ms: number) => new Promise(res => setTimeout(res, ms));
-    initialPrice = await getStockPrice(code);
-    await delay(300);
-    initialChart = await getStockChartData(code, 'D');
-    await delay(300);
-    initialInvestor = await getStockInvestorData(code);
-    await delay(300);
-    initialOrderbook = await getStockOrderbook(code);
+    const [priceRes, chartRes, investorRes, orderbookRes] = await Promise.allSettled([
+      getStockPrice(code),
+      getStockChartData(code, 'D'),
+      getStockInvestorData(code),
+      getStockOrderbook(code)
+    ]);
+
+    if (priceRes.status === 'fulfilled') initialPrice = priceRes.value;
+    if (chartRes.status === 'fulfilled') initialChart = chartRes.value;
+    if (investorRes.status === 'fulfilled') initialInvestor = investorRes.value;
+    if (orderbookRes.status === 'fulfilled') initialOrderbook = orderbookRes.value;
   } catch (e: any) {
-    console.warn("Server-side fetch failed (likely rate limit), falling back to client fetch:", e.message);
+    console.warn("Server-side fetch failed, falling back to client fetch:", e.message);
   }
 
   return (

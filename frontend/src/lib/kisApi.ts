@@ -139,6 +139,36 @@ export async function getStockChartData(stockCode: string, period: 'D' | 'W' | '
   return data.output2; 
 }
 
+export async function getStockMinuteChartData(stockCode: string) {
+  const token = await getAccessToken();
+  
+  // Use a fixed hour or current time? 
+  // For VTS and after hours, using "153000" (market close) is safer to get the whole day.
+  const time = "153000";
+
+  const res = await fetch(`${DOMAIN}/uapi/domestic-stock/v1/quotations/inquire-time-itemchartprice?FID_ETC_CLS_CODE=&FID_COND_MRKT_DIV_CODE=J&FID_INPUT_ISCD=${stockCode}&FID_INPUT_HOUR_1=${time}&FID_PW_DATA_INCU_YN=N`, {
+    method: 'GET',
+    headers: {
+      'Content-Type': 'application/json; charset=utf-8',
+      'authorization': `Bearer ${token}`,
+      'appkey': APP_KEY,
+      'appsecret': APP_SECRET,
+      'tr_id': 'FHKST03010200',
+    },
+    cache: 'no-store',
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`분봉 데이터 조회에 실패했습니다. HTTP: ${res.status}, Body: ${text}`);
+  }
+
+  const data = await res.json();
+  if (data.rt_cd !== '0') throw new Error(data.msg1 || 'API 오류가 발생했습니다.');
+  
+  return data.output2; 
+}
+
 export async function getPastIssueChartData(stockCode: string, startDate: string, endDate: string) {
   const token = await getAccessToken();
 
