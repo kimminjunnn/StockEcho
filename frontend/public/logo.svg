@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 460 120" fill="none">
+  <!-- Soundwave Equalizer Icon -->
+  <rect x="5" y="48" width="14" height="24" rx="7" fill="#FF5B5C" />
+  <rect x="29" y="28" width="14" height="64" rx="7" fill="#3B82F6" />
+  <rect x="53" y="18" width="14" height="84" rx="7" fill="#FF5B5C" />
+  <rect x="77" y="8" width="14" height="104" rx="7" fill="#3B82F6" />
+  <rect x="101" y="32" width="14" height="56" rx="7" fill="#FF5B5C" />
+  
+  <!-- Text -->
+  <text x="145" y="80" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="56" font-weight="900" letter-spacing="-1">
+    <tspan fill="#000000">Stock </tspan>
+    <tspan fill="#3B82F6">Echo</tspan>
+  </text>
+</svg>
