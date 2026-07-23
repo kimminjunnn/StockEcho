@@ -22,6 +22,14 @@ export interface StockIssue {
   selectionWindowDays: number;
   rank: number;
   score: number;
+  category?: string;
+  impact?: "positive" | "negative" | "neutral" | "mixed" | "unknown";
+  impactConfidence?: number;
+  impactHorizon?: "short_term" | "medium_term" | "long_term" | "unclear";
+  impactReason?: string;
+  impactEvidenceDocumentIds?: string[];
+  classificationMethod?: string;
+  classificationModel?: string;
   representativeArticle: IssueArticle;
   articles: IssueArticle[];
 }

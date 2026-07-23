@@ -18,6 +18,14 @@ interface MajorIssueRow {
   article_count_in_window: number;
   source_count_in_window: number;
   rank: number;
+  category?: string;
+  impact?: "positive" | "negative" | "neutral" | "mixed" | "unknown";
+  impact_confidence?: number;
+  impact_horizon?: "short_term" | "medium_term" | "long_term" | "unclear";
+  impact_reason?: string;
+  impact_evidence_document_ids?: string[];
+  classification_method?: string;
+  classification_model?: string;
   representative_article: {
     document_id: string;
     source?: string;
@@ -122,6 +130,14 @@ function toIssue(row: MajorIssueRow, topic?: TopicRow): StockIssue {
     selectionWindowDays: row.selection_window_days,
     rank: row.rank,
     score: row.score,
+    category: row.category,
+    impact: row.impact ?? "unknown",
+    impactConfidence: row.impact_confidence ?? 0,
+    impactHorizon: row.impact_horizon ?? "unclear",
+    impactReason: row.impact_reason ?? "",
+    impactEvidenceDocumentIds: row.impact_evidence_document_ids ?? [],
+    classificationMethod: row.classification_method ?? "rule-fallback-v1",
+    classificationModel: row.classification_model ?? "",
     representativeArticle: articles[0],
     articles,
   };
