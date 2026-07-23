@@ -5,7 +5,8 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-from collections import defaultdict
+import re
+from collections import Counter, defaultdict
 from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Sequence
@@ -21,12 +22,41 @@ from collector.sources.base import NewsSource
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-SCHEMA_VERSION = "issue-news-backfill-v1"
+SCHEMA_VERSION = "issue-news-backfill-v4"
 KST = ZoneInfo("Asia/Seoul")
+TOKEN_PATTERN = re.compile(r"[가-힣a-z0-9]+", re.IGNORECASE)
+EVENT_KEYWORD_NOISE = {
+    "관련",
+    "시장",
+    "기업",
+    "회사",
+    "기자",
+    "전망",
+    "발표",
+    "대한",
+    "통해",
+    "위한",
+}
 
 
-def _search_id(stock_code: str, phrases: Sequence[str], before: date) -> str:
-    value = "|".join((stock_code, before.isoformat(), *phrases))
+def _search_id(
+    stock_code: str,
+    phrases: Sequence[str],
+    before: date,
+    *,
+    result_limit: int,
+    external_result_limit: int | None,
+) -> str:
+    value = "|".join(
+        (
+            SCHEMA_VERSION,
+            stock_code,
+            before.isoformat(),
+            str(result_limit),
+            str(external_result_limit),
+            *phrases,
+        )
+    )
     digest = hashlib.sha256(value.encode("utf-8")).hexdigest()[:20]
     return f"issue_search_{digest}"
 
@@ -40,7 +70,7 @@ def _local_date(value: str) -> date:
 
 def _source_key(url: str) -> str:
     host = urlparse(url).hostname
-    return host or "unknown"
+    return host.removeprefix("www.") if host else "unknown"
 
 
 def _summary_path(project_root: Path, search_id: str) -> Path:
@@ -53,19 +83,97 @@ def _summary_path(project_root: Path, search_id: str) -> Path:
     )
 
 
+def _proxy_keywords(
+    articles: Sequence[dict[str, Any]],
+    *,
+    stock_code: str,
+    limit: int = 10,
+) -> list[str]:
+    company_tokens = {
+        token.casefold()
+        for token in TOKEN_PATTERN.findall(get_company(stock_code).name)
+    }
+    document_counts: Counter[str] = Counter()
+    total_counts: Counter[str] = Counter()
+    first_seen: dict[str, int] = {}
+    position = 0
+    for article in articles:
+        tokens = []
+        for token in TOKEN_PATTERN.findall(article.get("title", "")):
+            normalized = token.casefold()
+            if (
+                len(normalized) < 2
+                or normalized in company_tokens
+                or normalized in EVENT_KEYWORD_NOISE
+                or normalized.isdigit()
+            ):
+                continue
+            tokens.append(normalized)
+            first_seen.setdefault(normalized, position)
+            position += 1
+        document_counts.update(set(tokens))
+        total_counts.update(tokens)
+    return sorted(
+        document_counts,
+        key=lambda token: (
+            -document_counts[token],
+            -total_counts[token],
+            first_seen[token],
+            token,
+        ),
+    )[:limit]
+
+
 def _proxy_events(
     event_sources: dict[tuple[str, date], set[str]],
-    event_documents: dict[tuple[str, date], set[str]],
+    event_articles: dict[tuple[str, date], dict[str, dict[str, Any]]],
     *,
     target_stock_code: str,
     minimum_sources: int,
+    keywords: Sequence[str],
 ) -> list[dict[str, Any]]:
     rows = []
     for (stock_code, event_date), sources in event_sources.items():
         if len(sources) < minimum_sources:
             continue
+        query_tokens = {
+            token.casefold()
+            for keyword in keywords
+            for token in TOKEN_PATTERN.findall(keyword)
+            if len(token) >= 2
+        }
+        articles = sorted(
+            event_articles[(stock_code, event_date)].values(),
+            key=lambda article: (
+                len(
+                    query_tokens
+                    & {
+                        token.casefold()
+                        for token in TOKEN_PATTERN.findall(
+                            f"{article.get('title', '')} {article.get('summary', '')}"
+                        )
+                    }
+                ),
+                float(article.get("relevance_confidence", 0)),
+                article.get("published_at", ""),
+                article["document_id"],
+            ),
+            reverse=True,
+        )
+        if not articles:
+            continue
+        event_digest = hashlib.sha256(
+            "|".join(
+                (
+                    stock_code,
+                    event_date.isoformat(),
+                    *sorted(article["document_id"] for article in articles),
+                )
+            ).encode("utf-8")
+        ).hexdigest()[:24]
         rows.append(
             {
+                "event_id": f"naver-{event_digest}",
                 "stock_code": stock_code,
                 "scope": (
                     "own_company"
@@ -73,8 +181,15 @@ def _proxy_events(
                     else "other_company"
                 ),
                 "event_date": event_date.isoformat(),
-                "article_count": len(event_documents[(stock_code, event_date)]),
+                "name": articles[0].get("title", ""),
+                "keywords": _proxy_keywords(
+                    articles, stock_code=stock_code
+                ),
+                "article_count": len(articles),
                 "source_count": len(sources),
+                "representative_article": articles[0],
+                "articles": articles,
+                "origin": "naver_backfill",
             }
         )
     return sorted(
@@ -100,6 +215,7 @@ def run(
     max_pages_per_query: int = 3,
     max_total_calls: int = 12,
     result_limit: int = 3,
+    external_result_limit: int | None = None,
     minimum_sources: int = 2,
     max_peers: int = 3,
     refresh: bool = False,
@@ -116,6 +232,8 @@ def run(
         raise ValueError("max_total_calls는 1 이상이어야 합니다.")
     if result_limit < 1:
         raise ValueError("result_limit은 1 이상이어야 합니다.")
+    if external_result_limit is not None and external_result_limit < 1:
+        raise ValueError("external_result_limit은 1 이상이어야 합니다.")
     if minimum_sources < 1:
         raise ValueError("minimum_sources는 1 이상이어야 합니다.")
 
@@ -126,7 +244,13 @@ def run(
         extra_variants=extra_variants,
         max_peers=max_peers,
     )
-    search_id = _search_id(stock_code, plan.phrases, before)
+    search_id = _search_id(
+        stock_code,
+        plan.phrases,
+        before,
+        result_limit=result_limit,
+        external_result_limit=external_result_limit,
+    )
     output_path = _summary_path(project_root, search_id)
     if output_path.exists() and not refresh:
         cached = json.loads(output_path.read_text(encoding="utf-8"))
@@ -134,16 +258,17 @@ def run(
 
     source = source or load_source(source_name)
     event_sources: dict[tuple[str, date], set[str]] = defaultdict(set)
-    event_documents: dict[tuple[str, date], set[str]] = defaultdict(set)
+    event_articles: dict[tuple[str, date], dict[str, dict[str, Any]]] = defaultdict(dict)
     collection_calls: list[dict[str, Any]] = []
     exhausted_query_ids: set[str] = set()
 
     def qualifying_events() -> list[dict[str, Any]]:
         return _proxy_events(
             event_sources,
-            event_documents,
+            event_articles,
             target_stock_code=stock_code,
             minimum_sources=minimum_sources,
+            keywords=plan.keywords,
         )
 
     def own_ready() -> bool:
@@ -159,6 +284,8 @@ def run(
         )
 
     def external_required() -> int:
+        if external_result_limit is not None:
+            return external_result_limit
         return result_limit - (1 if own_ready() else 0)
 
     def ingest(result: dict[str, Any]) -> None:
@@ -167,9 +294,13 @@ def run(
             if article_date >= before:
                 continue
             key = (article["stock_code"], article_date)
-            event_documents[key].add(article["document_id"])
+            event_articles[key][article["document_id"]] = article
             event_sources[key].add(
-                _source_key(article.get("canonical_url", ""))
+                _source_key(
+                    article.get("canonical_url")
+                    or article.get("original_url")
+                    or article.get("source_url", "")
+                )
             )
 
     def collect_phase(
@@ -256,7 +387,7 @@ def run(
         "own_company_ready": own_ready(),
         "other_company_count": external_company_count(),
         "goal_met": (
-            len(events) >= result_limit
+            len(events) >= external_required() + (1 if own_ready() else 0)
             and external_company_count() >= external_required()
         ),
         "created_at": datetime.now(timezone.utc).isoformat(),
@@ -278,6 +409,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-pages-per-query", type=int, default=3)
     parser.add_argument("--max-total-calls", type=int, default=12)
     parser.add_argument("--result-limit", type=int, default=3)
+    parser.add_argument("--external-result-limit", type=int)
     parser.add_argument("--minimum-sources", type=int, default=2)
     parser.add_argument("--max-peers", type=int, default=3)
     parser.add_argument("--refresh", action="store_true")
@@ -296,6 +428,7 @@ def main() -> None:
         max_pages_per_query=args.max_pages_per_query,
         max_total_calls=args.max_total_calls,
         result_limit=args.result_limit,
+        external_result_limit=args.external_result_limit,
         minimum_sources=args.minimum_sources,
         max_peers=args.max_peers,
         refresh=args.refresh,

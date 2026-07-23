@@ -141,10 +141,16 @@ def run(
             if relevance.status == "eligible":
                 eligible_articles.append(
                     {
-                        "document_id": article.document_id,
+                        **article.to_dict(),
                         "stock_code": company.stock_code,
-                        "published_at": article.published_at,
-                        "canonical_url": article.canonical_url,
+                        "query_id": query.query_id,
+                        "query_text": query.text,
+                        "query_type": query.query_type,
+                        "relation_type": relevance.relation_type,
+                        "relevance_confidence": relevance.confidence,
+                        "relevance_evidence": [*relevance.evidence, *link.evidence],
+                        "rule_version": relevance.rule_version,
+                        "evaluated_at": collected_at.isoformat(),
                     }
                 )
             if article.document_id not in new_document_ids:

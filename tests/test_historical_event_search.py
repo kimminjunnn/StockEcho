@@ -236,6 +236,38 @@ class HistoricalEventSearchTest(unittest.TestCase):
         self.assertEqual(result["matches"], [])
         self.assertEqual(result["candidate_count"], 0)
 
+    def test_representative_article_is_reselected_for_current_keywords(self) -> None:
+        candidate = topic(
+            "000660",
+            "SK하이닉스",
+            topic_id="topic-bonus",
+            event_id="event-bonus",
+            event_date="2025-01-01",
+            keywords=["성과급", "노사", "협상"],
+            title="SK하이닉스 실적 전망",
+        )
+        candidate["events"][0]["articles"].append(
+            {
+                "document_id": "doc-relevant",
+                "title": "SK하이닉스 성과급 노사 협상 재개",
+                "summary": "성과급 제도 이견을 논의한다.",
+                "published_at": "2025-01-01T01:00:00+09:00",
+                "relevance_confidence": 0.8,
+            }
+        )
+
+        result = search_historical_events(
+            [candidate],
+            target_stock_code="005930",
+            keywords=["성과급", "노사", "협상"],
+            before=date(2026, 7, 22),
+        )
+
+        self.assertEqual(
+            result["matches"][0]["representative_article"]["document_id"],
+            "doc-relevant",
+        )
+
     def test_requires_searchable_keywords(self) -> None:
         with self.assertRaises(ValueError):
             search_historical_events(

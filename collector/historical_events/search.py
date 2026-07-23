@@ -85,6 +85,31 @@ def _score_candidate(
     return (round(score, 6), sorted(matched_tokens))
 
 
+def _representative_for_query(
+    event: dict[str, Any], query_tokens: set[str]
+) -> dict[str, Any]:
+    articles = list(event.get("articles") or [])
+    if not articles:
+        return event.get("representative_article", {})
+    return max(
+        articles,
+        key=lambda article: (
+            len(
+                query_tokens
+                & _tokens(
+                    [
+                        article.get("title", ""),
+                        article.get("summary", ""),
+                    ]
+                )
+            ),
+            float(article.get("relevance_confidence", 0)),
+            article.get("published_at", ""),
+            article.get("document_id", ""),
+        ),
+    )
+
+
 def _candidate_sort_key(candidate: dict[str, Any]) -> tuple[Any, ...]:
     return (
         -candidate["keyword_score"],
@@ -135,6 +160,7 @@ def search_historical_events(
     current_event_id: str | None = None,
     limit: int = 3,
     minimum_score: float = 0.4,
+    minimum_sources: int = 2,
 ) -> dict[str, Any]:
     """키워드로 과거 Event를 찾고 자사 1건을 외부 기업보다 우선한다.
 
@@ -147,6 +173,8 @@ def search_historical_events(
         raise ValueError("limit은 1 이상이어야 합니다.")
     if not 0.0 <= minimum_score <= 1.0:
         raise ValueError("minimum_score는 0과 1 사이여야 합니다.")
+    if minimum_sources < 1:
+        raise ValueError("minimum_sources는 1 이상이어야 합니다.")
     normalized_keywords = [keyword.strip() for keyword in keywords if keyword.strip()]
     if not normalized_keywords:
         raise ValueError("검색 키워드가 하나 이상 필요합니다.")
@@ -169,12 +197,20 @@ def search_historical_events(
                 continue
             if date.fromisoformat(event_date_value) >= before:
                 continue
+            source_count = int(event.get("source_count", 0))
+            if source_count < minimum_sources:
+                continue
 
+            representative = _representative_for_query(event, query_tokens)
+            event_for_score = {
+                **event,
+                "representative_article": representative,
+            }
             score, matched_keywords = _score_candidate(
                 query_keywords=normalized_keywords,
                 query_tokens=query_tokens,
                 topic=topic,
-                event=event,
+                event=event_for_score,
             )
             if score < minimum_score:
                 continue
@@ -189,12 +225,26 @@ def search_historical_events(
                 "name": event.get("name") or topic.get("name", ""),
                 "keywords": event.get("keywords") or topic.get("keywords", []),
                 "keyword_score": score,
+                "similarity_score": score,
                 "matched_keywords": matched_keywords,
                 "article_count": int(event.get("article_count", 0)),
-                "source_count": int(event.get("source_count", 0)),
-                "representative_article": event.get("representative_article", {}),
+                "source_count": source_count,
+                "representative_article": representative,
                 "articles": event.get("articles", []),
+                "origin": event.get("origin", topic.get("origin", "topic_model")),
             }
+            candidate["similarity_reasons"] = [
+                (
+                    "현재 이슈 핵심어 일치: "
+                    + ", ".join(matched_keywords)
+                ),
+                (
+                    "같은 종목의 과거 Event"
+                    if candidate["scope"] == "own_company"
+                    else "동종·지원 종목의 과거 Event"
+                ),
+                f"서로 다른 원문 출처 {source_count}곳",
+            ]
             if candidate["scope"] == "own_company":
                 own_candidates.append(candidate)
             else:
@@ -222,6 +272,8 @@ def search_historical_events(
         "keywords": normalized_keywords,
         "before": before.isoformat(),
         "selection_policy": "own_company_first_then_other_companies",
+        "minimum_score": minimum_score,
+        "minimum_sources": minimum_sources,
         "candidate_count": len(own_candidates) + len(external_candidates),
         "own_company_candidate_count": len(own_candidates),
         "other_company_candidate_count": len(external_candidates),

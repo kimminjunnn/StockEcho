@@ -80,7 +80,11 @@ def _source_count(rows: Iterable[dict[str, Any]]) -> int:
     for row in rows:
         url = row.get("canonical_url") or row.get("source_url", "")
         host = urlparse(url).hostname
-        sources.add(host or row.get("source", "unknown"))
+        sources.add(
+            host.removeprefix("www.")
+            if host
+            else row.get("source", "unknown")
+        )
     return len(sources)
 
 

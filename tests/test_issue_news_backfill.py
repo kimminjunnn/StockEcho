@@ -98,7 +98,7 @@ class IssueNewsPlannerTest(unittest.TestCase):
 
 
 class IssueNewsBackfillTest(unittest.TestCase):
-    def test_stops_after_one_own_and_two_external_company_proxies(self) -> None:
+    def test_stops_after_one_own_and_three_external_company_proxies(self) -> None:
         responses = {
             ("삼성전자 반도체 수출 규제", 1): [
                 news_item("삼성전자", 1),
@@ -109,6 +109,8 @@ class IssueNewsBackfillTest(unittest.TestCase):
                 news_item("SK하이닉스", 4),
                 news_item("한미반도체", 5),
                 news_item("한미반도체", 6),
+                news_item("NAVER", 7),
+                news_item("NAVER", 8),
             ],
         }
         source = FakeNewsSource(responses)
@@ -119,24 +121,36 @@ class IssueNewsBackfillTest(unittest.TestCase):
                 stock_code="005930",
                 keywords=["반도체", "수출", "규제"],
                 before=date(2026, 7, 22),
+                result_limit=4,
+                external_result_limit=3,
                 source=source,
                 project_root=project_root,
             )
 
             self.assertTrue(result["goal_met"])
             self.assertTrue(result["own_company_ready"])
-            self.assertEqual(result["other_company_count"], 2)
+            self.assertEqual(result["other_company_count"], 3)
             self.assertEqual(result["call_count"], 2)
             self.assertEqual(
                 [call["phase"] for call in result["calls"]],
                 ["own_company", "common_industry"],
             )
             self.assertTrue(all(call["sort"] == "sim" for call in source.calls))
+            self.assertTrue(
+                all(
+                    event["representative_article"]
+                    and event["articles"]
+                    and event["keywords"]
+                    for event in result["qualifying_event_proxies"]
+                )
+            )
 
             cached = run(
                 stock_code="005930",
                 keywords=["반도체", "수출", "규제"],
                 before=date(2026, 7, 22),
+                result_limit=4,
+                external_result_limit=3,
                 source=source,
                 project_root=project_root,
             )
