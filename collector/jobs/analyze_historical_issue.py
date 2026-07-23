@@ -12,6 +12,30 @@ from collector.historical_events.service import (
 )
 
 
+def _failure_payload(error: Exception) -> dict[str, object]:
+    message = str(error)
+    if "SUPABASE_DB_URL" in message:
+        return {
+            "success": False,
+            "errorCode": "collector_configuration_missing",
+            "error": "루트 .env에 SUPABASE_DB_URL 설정이 필요합니다.",
+        }
+    if "NAVER_CLIENT_ID" in message or "NAVER_CLIENT_SECRET" in message:
+        return {
+            "success": False,
+            "errorCode": "collector_configuration_missing",
+            "error": (
+                "NAVER 보충 검색을 사용하려면 루트 .env에 "
+                "NAVER_CLIENT_ID와 NAVER_CLIENT_SECRET 설정이 필요합니다."
+            ),
+        }
+    return {
+        "success": False,
+        "errorCode": "analysis_failed",
+        "error": "과거 유사 이슈 분석을 완료하지 못했습니다.",
+    }
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--stock-code", required=True)
@@ -38,16 +62,8 @@ def main() -> None:
                 keywords=tuple(args.keyword),
             )
         )
-    except Exception:
-        print(
-            json.dumps(
-                {
-                    "success": False,
-                    "error": "과거 유사 이슈 분석을 완료하지 못했습니다.",
-                },
-                ensure_ascii=False,
-            )
-        )
+    except Exception as error:
+        print(json.dumps(_failure_payload(error), ensure_ascii=False))
         raise SystemExit(1)
     print(json.dumps({"success": True, "data": result}, ensure_ascii=False))
 

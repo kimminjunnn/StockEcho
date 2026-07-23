@@ -89,4 +89,5 @@ export interface HistoricalIssueApiResponse {
   success: boolean;
   data?: HistoricalIssueAnalysis;
   error?: string;
+  errorCode?: string;
 }
