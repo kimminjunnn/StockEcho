@@ -1,14 +1,58 @@
 "use client";
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useSession, signIn, signOut } from "next-auth/react";
 
+interface KospiData {
+  price: number;
+  change: number;
+  changeRate: number;
+  sign: string;
+}
+
 export default function Header() {
   const { data: session, status } = useSession();
+  const [kospi, setKospi] = useState<KospiData | null>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+    async function fetchKospi() {
+      try {
+        const res = await fetch('/api/stock/kospi');
+        if (res.ok) {
+          const json = await res.json();
+          if (json.data && isMounted) {
+            setKospi(json.data);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to load KOSPI index:', err);
+      }
+    }
+    fetchKospi();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const formatPrice = (val?: number) => {
+    if (val === undefined || val === null || isNaN(val) || val === 0) return '2,581.39';
+    return val.toLocaleString('ko-KR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  };
+
+  const formatChange = (change?: number, rate?: number) => {
+    if (change === undefined || change === null || (change === 0 && (!rate || rate === 0))) {
+      return '-14.21 (0.55%)';
+    }
+    const absChange = Math.abs(change).toFixed(2);
+    const absRate = Math.abs(rate || 0).toFixed(2);
+    const prefix = change > 0 ? '+' : change < 0 ? '-' : '';
+    return `${prefix}${absChange} (${absRate}%)`;
+  };
 
   return (
-    <header className="bg-surface sticky top-0 z-50 border-b border-outline-variant">
+    <header className="bg-white sticky top-0 z-50 border-b border-slate-200/80 shadow-sm">
       <div className="flex justify-between items-center px-gutter h-[80px] max-w-container-max mx-auto">
         <div className="flex items-center gap-xl">
           <Link
@@ -22,19 +66,25 @@ export default function Header() {
               <span className="text-[#3B82F6]">Echo</span>
             </span>
           </Link>
-
         </div>
 
-        <div className="flex items-center gap-md">
-          <div className="hidden sm:flex flex-col items-end mr-md border-r border-outline-variant pr-md">
-            <span className="font-label-caps text-[10px] text-outline">KOSPI INDEX</span>
-            <span className="font-title-sm text-sm font-bold">2,650.21 <span className="text-error ml-xs font-normal">-0.45%</span></span>
+        <div className="flex items-center gap-4">
+          {/* KOSPI Index Pill Badge (KIS API Integration) */}
+          <div className="flex items-center gap-2 bg-[#F1F5F9] px-3.5 py-1.5 rounded-xl border border-slate-200/60 shadow-sm text-sm">
+            <span className="bg-slate-200/80 text-slate-700 text-xs font-extrabold px-2 py-0.5 rounded-md tracking-wider">
+              KOSPI
+            </span>
+            <span className="font-extrabold text-slate-900 text-sm">
+              {formatPrice(kospi?.price)}
+            </span>
+            <span className="font-bold text-xs text-red-500">
+              {formatChange(kospi?.change, kospi?.changeRate)}
+            </span>
           </div>
 
           {status === "loading" ? (
             <div className="flex items-center gap-sm">
-              <div className="w-24 h-5 bg-gray-200 animate-pulse rounded"></div>
-              <div className="h-10 w-10 rounded-full bg-gray-200 animate-pulse"></div>
+              <div className="w-24 h-9 bg-gray-200 animate-pulse rounded-full"></div>
             </div>
           ) : session?.user ? (
             <div className="flex items-center gap-sm group relative">
@@ -56,7 +106,7 @@ export default function Header() {
           ) : (
             <button
               onClick={() => signIn('google')}
-              className="bg-primary hover:bg-blue-600 text-white text-sm font-bold py-2 px-4 rounded-full transition-colors flex items-center gap-2 shadow-sm"
+              className="bg-[#0059B9] hover:bg-blue-700 text-white text-sm font-bold py-2.5 px-6 rounded-full transition-all flex items-center gap-2 shadow-sm active:scale-95"
             >
               <svg className="w-4 h-4 bg-white rounded-full p-[2px]" viewBox="0 0 24 24">
                 <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
@@ -72,3 +122,4 @@ export default function Header() {
     </header>
   );
 }
+

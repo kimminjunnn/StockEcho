@@ -238,6 +238,28 @@ export async function getStockOrderbook(stockCode: string) {
   const data = await res.json();
   if (data.rt_cd !== '0') throw new Error(data.msg1 || 'API 오류가 발생했습니다.');
   
-  // output1 contains the 10-level ask/bid prices and quantities
   return data.output1;
+}
+
+export async function getKospiIndex() {
+  const token = await getAccessToken();
+  
+  const res = await fetch(`${DOMAIN}/uapi/domestic-stock/v1/quotations/inquire-index-price?FID_COND_MRKT_DIV_CODE=U&FID_INPUT_ISCD=0001`, {
+    method: 'GET',
+    headers: {
+      'Content-Type': 'application/json; charset=utf-8',
+      'authorization': `Bearer ${token}`,
+      'appkey': APP_KEY,
+      'appsecret': APP_SECRET,
+      'tr_id': 'FHPUP02100000',
+    },
+    cache: 'no-store',
+  });
+
+  if (!res.ok) throw new Error('KOSPI 지수 조회에 실패했습니다.');
+
+  const data = await res.json();
+  if (data.rt_cd !== '0') throw new Error(data.msg1 || 'API 오류가 발생했습니다.');
+  
+  return data.output;
 }

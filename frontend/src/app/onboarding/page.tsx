@@ -13,199 +13,213 @@ export default function OnboardingPage() {
       router.replace('/');
     }
   }, [status, router]);
-  // Simple micro-interactions for buttons
-  useEffect(() => {
-    const buttons = document.querySelectorAll('button');
-    const handleMouseDown = (e: Event) => {
-      (e.currentTarget as HTMLElement).style.transform = 'scale(0.98)';
-    };
-    const handleMouseUp = (e: Event) => {
-      (e.currentTarget as HTMLElement).style.transform = 'scale(1)';
-    };
-    const handleMouseLeave = (e: Event) => {
-      (e.currentTarget as HTMLElement).style.transform = 'scale(1)';
-    };
-
-    buttons.forEach(button => {
-      button.addEventListener('mousedown', handleMouseDown);
-      button.addEventListener('mouseup', handleMouseUp);
-      button.addEventListener('mouseleave', handleMouseLeave);
-    });
-
-    return () => {
-      buttons.forEach(button => {
-        button.removeEventListener('mousedown', handleMouseDown);
-        button.removeEventListener('mouseup', handleMouseUp);
-        button.removeEventListener('mouseleave', handleMouseLeave);
-      });
-    };
-  }, []);
 
   return (
-    <>
-      <style dangerouslySetInnerHTML={{
-        __html: `
-        @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500&display=swap');
+    <div className="bg-[#F8FAFC] min-h-screen text-slate-900 w-full flex flex-col justify-between font-sans">
+      {/* Main Container */}
+      <main className="max-w-[1240px] w-full mx-auto px-6 py-10 flex-grow space-y-12">
         
-        .onboarding-container {
-            background-color: #f8f9ff;
-            font-family: 'Manrope', sans-serif;
-            color: #0b1c30;
-            overflow-x: hidden;
-            min-height: 100vh;
-        }
-        .onboarding-container .glass-card {
-            background: rgba(255, 255, 255, 0.8);
-            backdrop-filter: blur(12px);
-            border: 1px solid rgba(229, 238, 255, 0.5);
-        }
-        .onboarding-container .text-gradient {
-            background: linear-gradient(135deg, #004ac6 0%, #2563eb 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-        }
-        .onboarding-container .hero-mesh {
-            position: absolute;
-            top: -20%;
-            right: -10%;
-            width: 60%;
-            height: 80%;
-            background: radial-gradient(circle at 50% 50%, rgba(37, 99, 235, 0.08), transparent 70%);
-            z-index: -1;
-            filter: blur(60px);
-        }
-      `}} />
+        {/* Top Hero Section (2-Column Grid) */}
+        <section className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center pt-4">
+          
+          {/* Left Column: Value Proposition & CTA */}
+          <div className="lg:col-span-6 space-y-6 w-full flex flex-col items-start">
+            <h1 className="text-4xl md:text-5xl font-extrabold text-slate-900 tracking-tight leading-[1.25] text-left" style={{ wordBreak: 'normal' }}>
+              과거의 <span className="text-[#2563EB]">유사 사례</span>로,<br />
+              <span className="text-slate-900">주가 흐름</span>을 파악해보세요.
+            </h1>
+            
+            <p className="text-slate-600 text-base md:text-lg leading-relaxed font-medium text-left" style={{ width: '100%', maxWidth: '540px', wordBreak: 'normal' }}>
+              StockEcho가 뉴스와 공시에서 핵심 사건을 찾고,<br />
+              비슷한 사건 이후의 실제 주가 반응을 분석해<br />
+              가능성 있는 시나리오를 보여드리고 리밸런싱 제안을 해드려요.
+            </p>
 
-      <div className="onboarding-container bg-background w-full">
-        {/* Main Content */}
-        <main className="pt-24 pb-32">
-          {/* Hero Section */}
-          <section className="relative max-w-[1200px] mx-auto px-gutter mb-xl overflow-visible">
-            <div className="hero-mesh"></div>
-            <div className="max-w-[768px] mx-auto md:mx-0">
-              <div className="inline-flex items-center gap-xs bg-secondary-container text-on-secondary-container px-md py-xs rounded-full mb-md">
-                <span className="material-symbols-outlined text-[18px]" style={{ fontVariationSettings: "'FILL' 1" }}>auto_awesome</span>
-                <span className="text-label-mono font-label-mono text-[12px] uppercase tracking-wider font-semibold" style={{ fontFamily: "'JetBrains Mono'" }}>AI-DRIVEN RISK ENGINE v2.4</span>
+            <div className="pt-2">
+              <button
+                onClick={() => signIn('google', { callbackUrl: '/' })}
+                className="bg-[#0052CC] hover:bg-blue-700 text-white font-bold px-7 py-3.5 rounded-2xl shadow-lg shadow-blue-500/20 hover:shadow-xl transition-all inline-flex items-center gap-2 text-base active:scale-95 cursor-pointer"
+              >
+                서비스 시작하기
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M14 5l7 7m0 0l-7 7m7-7H3" />
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          {/* Right Column: AI Risk Analysis Feature Showcase Card */}
+          <div className="lg:col-span-6 w-full">
+            <div className="bg-[#EEF4FF] rounded-3xl p-7 md:p-8 flex flex-col sm:flex-row items-center gap-6 border border-blue-100/80 shadow-sm w-full">
+              
+              {/* Left Intro inside Light Blue Box */}
+              <div className="flex-1 space-y-3 w-full" style={{ minWidth: '180px' }}>
+                <h3 className="text-xl font-bold text-[#1E3A8A] tracking-tight">
+                  AI 기반 투자 위험 분석
+                </h3>
+                <p className="text-slate-600 text-xs md:text-sm leading-relaxed font-medium" style={{ wordBreak: 'normal' }}>
+                  공시와 뉴스를 AI가<br />
+                  실시간으로 분석하여<br />
+                  보유 종목의 위험 요인을<br />
+                  한눈에 확인할 수 있습니다.<br />
+                  복잡한 투자 정보를<br />
+                  쉽고 빠르게 이해해 보세요.
+                </p>
               </div>
-              <h1 className="font-display-lg text-[40px] md:text-[56px] mb-md leading-tight" style={{ fontWeight: 700, letterSpacing: '-0.02em', wordBreak: 'keep-all' }}>
-                공시·뉴스 기반 AI 포트폴리오 <br />
-                <span className="text-gradient">위험 진단, Stock Echo</span>
-              </h1>
-              <p className="font-body-lg text-[16px] md:text-[18px] text-on-surface-variant mb-lg leading-relaxed max-w-[600px] break-keep">
-                BERTopic과 RAG 기반 과거 유사 사건(Risk Replay) 분석으로 <br className="hidden md:block" />
-                투자 위험을 객관적으로 관리하고 의사결정의 확신을 더하세요.
-              </p>
-              <div className="flex flex-col sm:flex-row gap-sm">
-                <button onClick={() => signIn('google', { callbackUrl: '/' })} className="bg-primary text-on-primary px-lg py-md rounded-xl font-headline-sm shadow-xl shadow-primary/20 hover:shadow-2xl hover:shadow-primary/30 transition-all flex items-center justify-center gap-xs font-semibold">
-                  서비스 시작하기
-                  <span className="material-symbols-outlined">arrow_forward</span>
+
+              {/* Right Floating Demo Card */}
+              <div className="w-full sm:w-[320px] shrink-0 bg-white rounded-2xl p-5 shadow-xl border border-slate-100 space-y-4">
+                
+                {/* Stock Header */}
+                <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-slate-900 text-base">현대차</span>
+                    <span className="text-slate-700 font-semibold text-sm">418,000</span>
+                    <span className="text-red-500 font-semibold text-xs">+0.58%</span>
+                  </div>
+                  <span className="bg-[#DBEAFE] text-[#1E40AF] text-[11px] font-bold px-2.5 py-1 rounded-full">
+                    주요 이슈 3건
+                  </span>
+                </div>
+
+                {/* Main Issue Card */}
+                <div className="bg-white border border-slate-200 rounded-xl p-3.5 space-y-2 shadow-sm">
+                  <div className="flex justify-between items-start">
+                    <h4 className="font-bold text-slate-900 text-sm">1. 노동 분쟁</h4>
+                  </div>
+                  <p className="text-[11px] text-slate-400 font-medium">
+                    1시간 전 · 언론사 26곳 · 관련기사 28건
+                  </p>
+
+                  {/* News Preview Sub-box */}
+                  <div className="bg-[#F8FAFC] border border-slate-100 rounded-lg p-2.5 space-y-1">
+                    <span className="text-[10px] font-bold text-slate-500 block">대표 기사</span>
+                    <p className="font-bold text-slate-900 text-xs truncate">
+                      현대차 노조, 6번째 부분파업 전개...
+                    </p>
+                    <span className="text-[10px] text-slate-400 block">
+                      newsis.com · 1시간 전
+                    </span>
+                  </div>
+                </div>
+
+                {/* CTA inside Card */}
+                <button
+                  onClick={() => signIn('google', { callbackUrl: '/' })}
+                  className="w-full bg-[#4285F4] hover:bg-blue-600 text-white font-bold text-xs py-3 rounded-xl transition-colors shadow-sm text-center cursor-pointer"
+                >
+                  과거 유사 사례 분석
                 </button>
-                <button className="bg-white border border-outline-variant text-on-surface px-lg py-md rounded-xl font-headline-sm hover:bg-surface-container-low transition-colors font-semibold">
-                  데모 보기
-                </button>
+
               </div>
             </div>
-          </section>
+          </div>
+        </section>
 
-          {/* Features Section (Bento Style) */}
-          <section className="max-w-[1200px] mx-auto px-gutter mb-xl mt-32">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-md">
-              {/* Card 1 */}
-              <div className="glass-card p-lg rounded-xl flex flex-col hover:border-primary/30 transition-all duration-300 group">
-                <div className="w-12 h-12 rounded-lg bg-primary/10 text-primary flex items-center justify-center mb-md group-hover:scale-110 transition-transform">
-                  <span className="material-symbols-outlined text-[28px]" style={{ fontVariationSettings: "'FILL' 1" }}>history_toggle_off</span>
-                </div>
-                <h3 className="font-headline-md text-[24px] mb-sm font-semibold">Risk Replay</h3>
-                <p className="font-body-md text-[14px] text-on-surface-variant leading-relaxed">
-                  위험 사건 감지 및 과거 유사 사건(Top 5) 분석 — 1일·5일·20일 시장 대비 초과수익률 및 하락 비율 제시
-                </p>
-                <div className="mt-auto pt-lg">
-                  <div className="h-1 w-12 bg-primary/20 group-hover:w-full transition-all duration-500"></div>
-                </div>
-              </div>
-
-              {/* Card 2 */}
-              <div className="glass-card p-lg rounded-xl flex flex-col hover:border-primary/30 transition-all duration-300 group">
-                <div className="w-12 h-12 rounded-lg bg-surface-container-high text-primary flex items-center justify-center mb-md group-hover:scale-110 transition-transform">
-                  <span className="material-symbols-outlined text-[28px]" style={{ fontVariationSettings: "'FILL' 1" }}>description</span>
-                </div>
-                <h3 className="font-headline-md text-[24px] mb-sm font-semibold">AI Briefing</h3>
-                <p className="font-body-md text-[14px] text-on-surface-variant leading-relaxed">
-                  할루시네이션 없는 팩트 중심 3줄 요약 및 100% 검증된 공시·뉴스 원문 링크 제공으로 투명성 확보
-                </p>
-                <div className="mt-auto pt-lg">
-                  <div className="h-1 w-12 bg-primary/20 group-hover:w-full transition-all duration-500"></div>
-                </div>
-              </div>
-
-              {/* Card 3 */}
-              <div className="glass-card p-lg rounded-xl flex flex-col hover:border-primary/30 transition-all duration-300 group">
-                <div className="w-12 h-12 rounded-lg bg-primary-container/10 text-primary flex items-center justify-center mb-md group-hover:scale-110 transition-transform">
-                  <span className="material-symbols-outlined text-[28px]" style={{ fontVariationSettings: "'FILL' 1" }}>monitoring</span>
-                </div>
-                <h3 className="font-headline-md text-[24px] mb-sm font-semibold">Stress Test</h3>
-                <p className="font-body-md text-[14px] text-on-surface-variant leading-relaxed">
-                  과거 충격 반영 자산 변동액 시뮬레이션 및 개인별 투자 성향에 맞춘 최적화된 위험 관리 제안
-                </p>
-                <div className="mt-auto pt-lg">
-                  <div className="h-1 w-12 bg-primary/20 group-hover:w-full transition-all duration-500"></div>
-                </div>
-              </div>
+        {/* Bottom Section: Mock Dashboard with Glass Lock Overlay */}
+        <section className="relative rounded-3xl overflow-hidden bg-[#3A3E45] border border-slate-700/50 shadow-2xl p-6 md:p-10 min-h-[500px] flex items-center justify-center w-full">
+          
+          {/* Lock & Login Overlay */}
+          <div className="absolute inset-0 z-20 bg-slate-900/65 backdrop-blur-md flex flex-col items-center justify-center text-center p-8 w-full">
+            <div className="w-16 h-16 rounded-full bg-white/10 flex items-center justify-center backdrop-blur-lg border border-white/20 shadow-inner mb-5 shrink-0">
+              <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+              </svg>
             </div>
-          </section>
 
-          {/* Preview Section */}
-          <section className="max-w-[1200px] mx-auto px-gutter mb-xl mt-32">
-            <div className="relative rounded-3xl overflow-hidden bg-on-background border border-outline/20 p-xs shadow-2xl">
-              <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-on-background/40 backdrop-blur-md text-center px-sm">
-                <span className="material-symbols-outlined text-white text-[48px] mb-md opacity-80">lock</span>
-                <h2 className="font-headline-md text-[24px] font-semibold text-white mb-sm break-keep">
-                  로그인 후 맞춤형 포트폴리오 분석 리포트를 확인하실 수 있습니다
-                </h2>
-                <p className="font-body-md text-[14px] text-white/70 max-w-[500px] mb-lg break-keep">
-                  실시간 데이터 동기화를 통해 당신의 자산이 직면한 잠재적 위험 요소를 즉시 진단합니다.
-                </p>
-                <button onClick={() => signIn('google', { callbackUrl: '/' })} className="bg-white text-primary px-lg py-md rounded-xl font-headline-sm font-semibold hover:bg-surface-bright transition-colors shadow-lg">
-                  로그인하여 분석 시작
-                </button>
+            <h2 className="text-2xl md:text-3xl font-extrabold text-white tracking-tight text-center mb-3" style={{ width: '100%', maxWidth: '800px', wordBreak: 'normal' }}>
+              로그인 후 맞춤형 포트폴리오 분석 리포트를 확인하실 수 있습니다.
+            </h2>
+
+            <p className="text-slate-300 text-sm md:text-base font-medium leading-relaxed text-center mb-7" style={{ width: '100%', maxWidth: '600px', wordBreak: 'normal' }}>
+              실시간 데이터 동기화를 통해<br />
+              당신의 자산이 직면한 잠재적 위험 요소를 즉시 진단합니다.
+            </p>
+
+            <button
+              onClick={() => signIn('google', { callbackUrl: '/' })}
+              className="bg-white hover:bg-slate-100 text-slate-900 font-extrabold px-8 py-3.5 rounded-2xl shadow-xl transition-all text-sm md:text-base active:scale-95 cursor-pointer shrink-0"
+            >
+              로그인하여 분석 시작
+            </button>
+          </div>
+
+          {/* Background Blurred Content (Simulated Mock Portfolio Screen matching screenshot) */}
+          <div className="w-full opacity-35 pointer-events-none select-none grid grid-cols-1 lg:grid-cols-12 gap-6 text-white">
+            
+            {/* Left Portfolio Section */}
+            <div className="lg:col-span-8 space-y-6">
+              <div>
+                <h2 className="text-3xl font-bold text-slate-200">내 포트폴리오</h2>
+                <p className="text-slate-400 text-sm mt-1">보유한 종목의 현황과 주요 위험 요인을 분석합니다.</p>
               </div>
 
-              {/* Example Dashboard Preview (Simulated with Gradient/Cards) */}
-              <div className="bg-surface-bright p-lg rounded-2xl grid grid-cols-12 gap-sm opacity-40">
-                <div className="col-span-12 md:col-span-8 bg-white h-96 rounded-xl border border-outline-variant p-md">
-                  <div className="flex justify-between mb-lg">
-                    <div className="h-8 w-48 bg-surface-container rounded"></div>
-                    <div className="h-8 w-24 bg-primary/10 rounded"></div>
-                  </div>
-                  <div className="space-y-sm">
-                    <div className="h-4 w-full bg-surface-container rounded"></div>
-                    <div className="h-4 w-5/6 bg-surface-container rounded"></div>
-                    <div className="h-4 w-4/6 bg-surface-container rounded"></div>
-                  </div>
-                  <div className="mt-lg flex gap-sm">
-                    <div className="h-32 flex-1 bg-surface-container rounded-lg"></div>
-                    <div className="h-32 flex-1 bg-surface-container rounded-lg"></div>
-                  </div>
+              <div className="inline-block bg-slate-700 text-slate-200 text-xs font-bold px-4 py-2 rounded-xl">
+                + 종목 편집하기
+              </div>
+
+              {/* Table Mock */}
+              <div className="bg-slate-800/80 rounded-2xl border border-slate-700 p-4 space-y-4">
+                <div className="grid grid-cols-12 text-xs text-slate-400 px-2 font-bold">
+                  <span className="col-span-4">종목명</span>
+                  <span className="col-span-3 text-right">현재가</span>
+                  <span className="col-span-2 text-right">등락률</span>
+                  <span className="col-span-3 text-right">상태</span>
                 </div>
-                <div className="col-span-12 md:col-span-4 flex flex-col gap-sm">
-                  <div className="bg-white h-44 rounded-xl border border-outline-variant p-md">
-                    <div className="h-6 w-32 bg-surface-container rounded mb-md"></div>
-                    <div className="h-16 w-full bg-error-container/20 rounded"></div>
-                  </div>
-                  <div className="bg-white h-48 rounded-xl border border-outline-variant p-md">
-                    <div className="h-6 w-32 bg-surface-container rounded mb-md"></div>
-                    <div className="space-y-xs">
-                      <div className="h-3 w-full bg-surface-container rounded"></div>
-                      <div className="h-3 w-full bg-surface-container rounded"></div>
-                      <div className="h-3 w-full bg-surface-container rounded"></div>
+
+                <div className="bg-slate-800 rounded-xl p-4 border border-slate-700/60 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-lg bg-blue-900/50 text-blue-400 flex items-center justify-center font-bold">N</div>
+                    <div>
+                      <div className="font-bold">NAVER</div>
+                      <div className="text-xs text-slate-400">035420</div>
                     </div>
                   </div>
+                  <div className="font-bold">185,200원</div>
+                  <div className="text-slate-400 text-sm font-bold">0.00%</div>
+                  <div className="bg-slate-700 text-slate-300 text-xs px-3 py-1 rounded-lg font-bold">분석 완료</div>
                 </div>
               </div>
             </div>
-          </section>
-        </main>
-      </div>
-    </>
+
+            {/* Right Summary Section */}
+            <div className="lg:col-span-4 bg-slate-800/90 rounded-2xl border border-slate-700 p-5 space-y-5">
+              <h3 className="font-bold text-base text-slate-200">포트폴리오 요약</h3>
+              
+              {/* Mini Chart Mock */}
+              <div className="bg-slate-900/60 rounded-xl h-28 border border-slate-700/50 p-3 flex flex-col justify-between">
+                <div className="text-xs text-emerald-400 font-bold">+12.4%</div>
+                <div className="h-10 w-full bg-gradient-to-r from-blue-500/20 to-blue-500/40 rounded"></div>
+              </div>
+
+              <div className="space-y-2 text-xs text-slate-300">
+                <div className="flex justify-between py-1 border-b border-slate-700/50">
+                  <span>총 평가 금액</span>
+                  <span className="font-bold">1억 2,450만원</span>
+                </div>
+                <div className="flex justify-between py-1 border-b border-slate-700/50">
+                  <span>보유 종목</span>
+                  <span className="font-bold">8개</span>
+                </div>
+                <div className="flex justify-between py-1">
+                  <span>위험 종목</span>
+                  <span className="font-bold text-red-400">1개 (네이버)</span>
+                </div>
+              </div>
+
+              <div className="bg-slate-700/50 text-slate-200 font-bold text-xs py-3 rounded-xl text-center">
+                리밸런싱 제안 보기
+              </div>
+            </div>
+
+          </div>
+
+        </section>
+
+      </main>
+
+    </div>
   );
 }
+
+
