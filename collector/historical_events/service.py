@@ -33,7 +33,7 @@ from collector.topic_modeling.issue_classifier import (
 )
 
 
-SCHEMA_VERSION = "historical-issue-analysis-v7"
+SCHEMA_VERSION = "historical-issue-analysis-v8"
 RESULT_LIMIT = 4
 OTHER_COMPANY_RESULT_LIMIT = 3
 MINIMUM_SOURCES = 2
@@ -172,6 +172,37 @@ def _event_upsert_values(
     representative = event.get("representative_article") or (
         articles[0] if articles else {}
     )
+    article_times: list[tuple[datetime, dict[str, Any]]] = []
+    for article in [*articles, representative]:
+        value = article.get("published_at")
+        if not value:
+            continue
+        try:
+            parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        except ValueError:
+            continue
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        article_times.append((parsed.astimezone(timezone.utc), article))
+    feature_cutoff_at = event.get("feature_cutoff_at")
+    if not feature_cutoff_at and article_times:
+        feature_cutoff_at = min(value for value, _article in article_times).isoformat()
+    detected_at = event.get("detected_at") or feature_cutoff_at
+    parsed_cutoff = (
+        datetime.fromisoformat(str(feature_cutoff_at).replace("Z", "+00:00"))
+        if feature_cutoff_at
+        else None
+    )
+    if parsed_cutoff and parsed_cutoff.tzinfo is None:
+        parsed_cutoff = parsed_cutoff.replace(tzinfo=timezone.utc)
+    feature_document_ids = sorted(
+        {
+            str(article.get("document_id"))
+            for published_at, article in article_times
+            if article.get("document_id")
+            and (parsed_cutoff is None or published_at <= parsed_cutoff)
+        }
+    )
     return (
         str(event["event_id"]),
         stock_code,
@@ -187,6 +218,9 @@ def _event_upsert_values(
         int(event.get("source_count") or 0),
         Jsonb(representative),
         Jsonb(articles),
+        detected_at,
+        feature_cutoff_at,
+        Jsonb(feature_document_ids),
         model_version,
         origin,
     )
@@ -202,10 +236,12 @@ def _upsert_event_rows(connection, values: Sequence[tuple[Any, ...]]) -> None:
               event_id, stock_code, topic_id, topic_name, topic_keywords,
               event_category, impact_direction, event_date, name, keywords,
               article_count, source_count, representative_article, articles,
+              detected_at, feature_cutoff_at, feature_document_ids,
               model_version, origin
             ) values (
               %s, %s, %s, %s, %s, %s, %s, %s,
-              %s, %s, %s, %s, %s, %s, %s, %s
+              %s, %s, %s, %s, %s, %s, %s, %s,
+              %s, %s, %s
             )
             on conflict (event_id) do update set
               stock_code = excluded.stock_code,
@@ -221,6 +257,9 @@ def _upsert_event_rows(connection, values: Sequence[tuple[Any, ...]]) -> None:
               source_count = excluded.source_count,
               representative_article = excluded.representative_article,
               articles = excluded.articles,
+              detected_at = excluded.detected_at,
+              feature_cutoff_at = excluded.feature_cutoff_at,
+              feature_document_ids = excluded.feature_document_ids,
               model_version = excluded.model_version,
               origin = excluded.origin,
               updated_at = now()
@@ -238,6 +277,9 @@ def _upsert_event_rows(connection, values: Sequence[tuple[Any, ...]]) -> None:
               historical_events.source_count,
               historical_events.representative_article,
               historical_events.articles,
+              historical_events.detected_at,
+              historical_events.feature_cutoff_at,
+              historical_events.feature_document_ids,
               historical_events.model_version,
               historical_events.origin
             ) is distinct from (
@@ -254,6 +296,9 @@ def _upsert_event_rows(connection, values: Sequence[tuple[Any, ...]]) -> None:
               excluded.source_count,
               excluded.representative_article,
               excluded.articles,
+              excluded.detected_at,
+              excluded.feature_cutoff_at,
+              excluded.feature_document_ids,
               excluded.model_version,
               excluded.origin
             )
@@ -561,15 +606,30 @@ def _upsert_market_rows(
         cursor.executemany(
             """
             insert into public.market_daily (
-              stock_code, trading_date, close_price, source, fetched_at
-            ) values (%s, %s, %s, 'KIS', now())
+              stock_code, trading_date, open_price, high_price, low_price,
+              close_price, volume, adjusted, source, fetched_at
+            ) values (%s, %s, %s, %s, %s, %s, %s, %s, 'KIS', now())
             on conflict (stock_code, trading_date) do update set
+              open_price = coalesce(excluded.open_price, public.market_daily.open_price),
+              high_price = coalesce(excluded.high_price, public.market_daily.high_price),
+              low_price = coalesce(excluded.low_price, public.market_daily.low_price),
               close_price = excluded.close_price,
+              volume = coalesce(excluded.volume, public.market_daily.volume),
+              adjusted = excluded.adjusted,
               source = excluded.source,
               fetched_at = now()
             """,
             [
-                (stock_code, row["trading_date"], row["close_price"])
+                (
+                    stock_code,
+                    row["trading_date"],
+                    row.get("open_price"),
+                    row.get("high_price"),
+                    row.get("low_price"),
+                    row["close_price"],
+                    row.get("volume"),
+                    bool(row.get("adjusted", True)),
+                )
                 for row in rows
             ],
         )
@@ -602,7 +662,7 @@ def _price_reaction(
 
     try:
         client = kis_client or load_kis_client()
-        fetched = client.daily_closes(
+        fetched = client.daily_prices(
             event["stock_code"],
             start_date=event_date - timedelta(days=7),
             end_date=end_date,

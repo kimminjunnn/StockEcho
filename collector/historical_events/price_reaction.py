@@ -1,4 +1,4 @@
-"""과거 Event 이후 거래일 기준 D+1·D+5·D+15·D+30 수익률."""
+"""과거 Event 이후 거래일 기준 D+1·D+5·D+20 수익률."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from zoneinfo import ZoneInfo
 
 KST = ZoneInfo("Asia/Seoul")
 MARKET_CLOSE_CUTOFF = time(15, 20)
-HORIZONS = (1, 5, 15, 30)
+HORIZONS = (1, 5, 20)
 
 
 def _published_before_close(value: str | None, event_date: date) -> bool:

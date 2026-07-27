@@ -58,7 +58,7 @@ class TradingDayReturnTests(unittest.TestCase):
         self.assertEqual(result["baseDate"], "2024-05-20")
         self.assertEqual(result["comparisonDates"]["d1"], "2024-05-21")
         self.assertEqual(result["comparisonDates"]["d5"], "2024-05-27")
-        self.assertEqual(result["comparisonDates"]["d30"], "2024-07-01")
+        self.assertEqual(result["comparisonDates"]["d20"], "2024-06-17")
         self.assertEqual(result["status"], "complete")
 
     def test_weekend_event_uses_next_trading_day_as_base(self) -> None:
@@ -92,8 +92,7 @@ class TradingDayReturnTests(unittest.TestCase):
 
         self.assertEqual(result["status"], "partial")
         self.assertIsNotNone(result["returns"]["d1"])
-        self.assertIsNone(result["returns"]["d15"])
-        self.assertIsNone(result["returns"]["d30"])
+        self.assertIsNone(result["returns"]["d20"])
 
 
 if __name__ == "__main__":

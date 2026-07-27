@@ -1,0 +1,40 @@
+{
+  "schema_version": "risk-model-evaluation-v1",
+  "label_key": "material_downside_label_d5",
+  "split": {
+    "strategy": "chronological-holdout",
+    "train_count": 16,
+    "validation_count": 32,
+    "test_count": 160,
+    "train_end": "2024-10-18",
+    "validation_end": "2025-12-25",
+    "test_start": "2026-01-06"
+  },
+  "empirical": {
+    "pr_auc": 0.348973,
+    "brier": 0.259933,
+    "ece": 0.15673
+  },
+  "candidates": {
+    "logistic": {
+      "pr_auc": 0.388511,
+      "brier": 0.28164,
+      "ece": 0.22119
+    },
+    "mlp": {
+      "pr_auc": 0.445087,
+      "brier": 0.269286,
+      "ece": 0.212496
+    }
+  },
+  "production_gate": {
+    "passed": false,
+    "selected_model": "empirical",
+    "requirements": [
+      "실제 train Event 100건 및 validation Event 30건 이상",
+      "실제 test Event 100건 이상",
+      "경험 기준선 대비 PR-AUC 상승 및 Brier 감소",
+      "ECE 0.10 이하"
+    ]
+  }
+}

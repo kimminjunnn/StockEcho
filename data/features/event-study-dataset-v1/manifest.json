@@ -1,0 +1,17 @@
+{
+  "datasetSchemaVersion": "event-study-dataset-v1",
+  "datasetHash": "4d11a0e200970932a81a6088ece790e5fac084d182d0187f5b8a426733f047b5",
+  "createdAt": "2026-07-27T10:54:36.350013+00:00",
+  "trainEnd": "2024-12-31",
+  "validationEnd": "2025-12-31",
+  "rowCount": 573,
+  "splitCounts": {
+    "train": 19,
+    "validation": 32,
+    "test": 522
+  },
+  "files": {
+    "jsonl": "events.jsonl",
+    "parquet": "events.parquet"
+  }
+}
