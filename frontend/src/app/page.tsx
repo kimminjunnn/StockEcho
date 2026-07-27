@@ -121,10 +121,58 @@ export default function HomePage() {
     const refreshMarketData = async () => {
       if (refreshInFlight) return;
       refreshInFlight = true;
-      const updates = new Map<string, { currentPrice: number; changeRate: number }>();
+      const updates = new Map<
+        string,
+        { currentPrice: number; changeRate?: number }
+      >();
+      const applyUpdates = () => {
+        if (abortController.signal.aborted || updates.size === 0) return;
+        setHoldings((currentHoldings) => currentHoldings.map((holding) => {
+          const update = updates.get(holding.code);
+          return update
+            ? {
+                ...holding,
+                currentPrice: update.currentPrice,
+                changeRate: update.changeRate ?? holding.changeRate,
+              }
+            : holding;
+        }));
+      };
 
       try {
         const codes = marketCodes.split(',');
+        try {
+          const storedResponse = await fetch('/api/portfolio/prices', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ codes }),
+            cache: 'no-store',
+            signal: abortController.signal,
+          });
+          const storedPayload = await storedResponse.json() as {
+            success?: boolean;
+            data?: Record<string, {
+              price: number;
+              changeRate: number | null;
+            }>;
+          };
+          if (storedResponse.ok && storedPayload.success) {
+            Object.entries(storedPayload.data ?? {}).forEach(([code, value]) => {
+              if (Number.isFinite(value.price) && value.price > 0) {
+                updates.set(code, {
+                  currentPrice: value.price,
+                  changeRate: value.changeRate ?? undefined,
+                });
+              }
+            });
+            applyUpdates();
+          }
+        } catch (error) {
+          if (abortController.signal.aborted) return;
+          console.warn('Stored market price fallback failed.', {
+            errorName: error instanceof Error ? error.name : 'unknown',
+          });
+        }
 
         // Paper trading allows one REST request per second, so pace each quote.
         for (const [index, code] of codes.entries()) {
@@ -155,11 +203,7 @@ export default function HomePage() {
           }
         }
 
-        if (abortController.signal.aborted || updates.size === 0) return;
-        setHoldings((currentHoldings) => currentHoldings.map((holding) => {
-          const update = updates.get(holding.code);
-          return update ? { ...holding, ...update } : holding;
-        }));
+        applyUpdates();
       } finally {
         refreshInFlight = false;
       }

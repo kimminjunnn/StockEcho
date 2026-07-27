@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getStockPrice } from '@/lib/kisApi';
+import { errorMessage } from '@/lib/errors';
 
 export async function GET(
   request: NextRequest,
@@ -21,10 +22,10 @@ export async function GET(
       success: true,
       data: priceData,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('API Route Error:', error);
     return NextResponse.json(
-      { error: error.message || 'Failed to fetch stock price' },
+      { error: errorMessage(error, 'Failed to fetch stock price') },
       { status: 500 }
     );
   }

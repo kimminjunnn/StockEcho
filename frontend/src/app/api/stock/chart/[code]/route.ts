@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getStockChartData, getStockMinuteChartData } from '@/lib/kisApi';
+import { errorMessage } from '@/lib/errors';
 
 export async function GET(
   request: NextRequest,
@@ -17,9 +18,9 @@ export async function GET(
       data = await getStockChartData(code, period);
     }
     return NextResponse.json({ success: true, data });
-  } catch (error: any) {
+  } catch (error: unknown) {
     return NextResponse.json(
-      { success: false, message: error.message },
+      { success: false, message: errorMessage(error, 'Failed to fetch chart data') },
       { status: 500 }
     );
   }

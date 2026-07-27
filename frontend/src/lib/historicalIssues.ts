@@ -11,14 +11,17 @@ export interface HistoricalPriceReaction {
   returns: {
     d1: number | null;
     d5: number | null;
-    d15: number | null;
-    d30: number | null;
+    d20: number | null;
+  };
+  abnormalReturns?: {
+    d1: number | null;
+    d5: number | null;
+    d20: number | null;
   };
   comparisonDates: {
     d1: string | null;
     d5: string | null;
-    d15: string | null;
-    d30: string | null;
+    d20: string | null;
   };
 }
 

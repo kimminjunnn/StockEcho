@@ -1,167 +1,90 @@
-"use client";
+import Link from "next/link";
 
-import React from 'react';
+const steps = [
+  {
+    title: "1. 사건을 Event로 묶기",
+    body: "같은 사건의 중복 기사를 하나의 Event로 묶고, 서로 다른 원문 출처가 2곳 이상인 사례를 우선 사용합니다.",
+  },
+  {
+    title: "2. 과거 반응 관측",
+    body: "사건일 기준 D+1·D+5·D+20 거래일 종목 수익률과 KOSPI를 뺀 비정상수익률을 따로 저장합니다.",
+  },
+  {
+    title: "3. 현재 위험 범위 계산",
+    body: "유사도와 출처 수로 과거 사례에 가중치를 주고 하락 비율, 중앙값, 하방·상방 분위수를 계산합니다.",
+  },
+  {
+    title: "4. 보유 비중에 반영",
+    body: "종목별 하락확률과 하방 분위수를 현재 평가금액 비중으로 가중해 포트폴리오 시나리오를 만듭니다.",
+  },
+  {
+    title: "5. 제약 안에서 목표 비중 계산",
+    body: "long-only, 종목당 최대 60%, turnover 최대 30% 조건 안에서 사건안전성 선호에 따른 계산상 비중을 제시합니다.",
+  },
+];
 
 export default function CriteriaPage() {
   return (
-    <main className="max-w-[1400px] mx-auto px-8 py-10 w-full flex-grow">
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-        
-        {/* Samsung Card */}
-        <section className="bg-white p-8 rounded-2xl shadow-sm border border-gray-100 flex flex-col gap-6">
-          <div className="flex justify-between items-start">
-            <div>
-              <p className="text-sm font-medium text-gray-500 mb-1">종목 분석</p>
-              <h2 className="text-3xl font-bold text-gray-900">삼성전자</h2>
-              <p className="text-lg font-bold text-gray-500 mt-1">(005930)</p>
-            </div>
-            <div className="bg-green-50 text-positive px-4 py-3 rounded-lg flex flex-col items-center">
-              <span className="font-bold flex items-center gap-1">
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"></path>
-                </svg>
-                +10.0%
-              </span>
-              <span className="text-xs font-medium mt-1">예상 성장률</span>
-            </div>
-          </div>
-          
-          <ul className="space-y-4">
-            <li className="flex items-start gap-3">
-              <div className="mt-1 w-5 h-5 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
-                <svg className="w-3 h-3 text-primary" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd"></path></svg>
-              </div>
-              <span className="text-gray-700 leading-relaxed font-medium text-[15px]">글로벌 GPU 리더들과의 HBM4 공급망 통합 가속화.</span>
-            </li>
-            <li className="flex items-start gap-3">
-              <div className="mt-1 w-5 h-5 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
-                <svg className="w-3 h-3 text-primary" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd"></path></svg>
-              </div>
-              <span className="text-gray-700 leading-relaxed font-medium text-[15px]">2nm 공정 파운드리 노드에서의 기술 리더십 강화.</span>
-            </li>
-            <li className="flex items-start gap-3">
-              <div className="mt-1 w-5 h-5 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
-                <svg className="w-3 h-3 text-primary" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd"></path></svg>
-              </div>
-              <span className="text-gray-700 leading-relaxed font-medium text-[15px]">고용량 AI 서버용 DRAM 모듈의 강력한 수요.</span>
-            </li>
-          </ul>
-
-          <div className="mt-auto bg-gray-50 rounded-xl p-6 border border-gray-100">
-            <p className="text-xs text-gray-500 font-bold mb-3">시장 센티먼트</p>
-            <div className="flex items-center gap-2 text-positive font-bold mb-3">
-              <span className="w-2.5 h-6 rounded-full bg-positive"></span>
-              긍정적인 뉴스 톤
-            </div>
-            <p className="text-sm text-gray-600 leading-relaxed">
-              기관 보고서들은 파운드리 턴어라운드와 메모리 사이클 회복을 매우 긍정적으로 평가하고 있습니다. 최근 기사의 82%가 기술적 회복 탄력성을 강조합니다.
-            </p>
-          </div>
-        </section>
-
-        {/* Naver Card */}
-        <section className="bg-white p-8 rounded-2xl shadow-sm border border-gray-100 flex flex-col gap-6">
-          <div className="flex justify-between items-start">
-            <div>
-              <p className="text-sm font-medium text-gray-500 mb-1">종목 분석</p>
-              <h2 className="text-3xl font-bold text-gray-900">네이버</h2>
-              <p className="text-lg font-bold text-gray-500 mt-1">(035420)</p>
-            </div>
-            <div className="bg-red-50 text-negative px-4 py-3 rounded-lg flex flex-col items-center">
-              <span className="font-bold flex items-center gap-1 text-sm">
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
-                </svg>
-                핵심 리스크 요인
-              </span>
-            </div>
-          </div>
-          
-          <div className="border-l-4 border-negative pl-4 py-1">
-            <h4 className="text-negative font-bold text-lg mb-3">노동 분쟁 영향</h4>
-            <p className="text-gray-700 leading-relaxed font-medium text-[15px]">
-              노조의 파업 계획으로 인해 서비스 안정성 점수가 <span className="text-negative font-bold">-14%</span> 하락할 것으로 예상되며, 이는 핵심 검색 및 커머스 인프라에 차질을 빚을 가능성이 있습니다.
-            </p>
-          </div>
-
-          <div className="mt-auto bg-gray-50 rounded-xl p-6 border border-gray-100">
-            <p className="text-xs text-gray-500 font-bold mb-3">시장 센티먼트</p>
-            <div className="flex items-center gap-2 text-negative font-bold mb-3">
-              <span className="w-2.5 h-2.5 rounded-full bg-negative"></span>
-              부정적인 뉴스 톤
-            </div>
-            <p className="text-sm text-gray-600 leading-relaxed">
-              경영권 분쟁과 관련된 소셜 미디어 언급량이 많아 AI 확장 소식이 가려지고 있습니다. 중립 또는 하향 조정된 애널리스트 등급이 증가하는 추세입니다.
-            </p>
-          </div>
-        </section>
-
-        {/* Line Card */}
-        <section className="bg-white p-8 rounded-2xl shadow-sm border border-gray-100 flex flex-col gap-6">
-          <div className="flex justify-between items-start">
-            <div>
-              <p className="text-sm font-medium text-gray-500 mb-1">종목 분석</p>
-              <h2 className="text-3xl font-bold text-gray-900">라인</h2>
-              <p className="text-lg font-bold text-gray-500 mt-1">(LYCorp)</p>
-            </div>
-            <div className="bg-red-50 text-negative px-4 py-3 rounded-lg flex flex-col items-center">
-              <span className="font-bold flex items-center gap-1">
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 17h8m0 0V9m0 8l-8-8-4 4-6-6"></path>
-                </svg>
-                -2.0%
-              </span>
-              <span className="text-xs font-medium mt-1">예상 하락률</span>
-            </div>
-          </div>
-          
-          <div className="border-l-4 border-negative pl-4 py-1">
-            <h4 className="text-negative font-bold text-lg mb-3">지배구조 리스크</h4>
-            <p className="text-gray-700 leading-relaxed font-medium text-[15px]">
-              자본 관계 재검토 및 플랫폼 연결성 약화 우려로 인해 시장 불확실성이 증대되고 있으며, 이는 장기적인 성장 동력에 부정적인 영향을 미칠 수 있습니다.
-            </p>
-          </div>
-
-          <div className="mt-auto bg-gray-50 rounded-xl p-6 border border-gray-100">
-            <p className="text-xs text-gray-500 font-bold mb-3">시장 센티먼트</p>
-            <div className="flex items-center gap-2 text-negative font-bold mb-3">
-              <span className="w-2.5 h-2.5 rounded-full bg-negative"></span>
-              부정적인 뉴스 톤
-            </div>
-            <p className="text-sm text-gray-600 leading-relaxed">
-              규제 환경 변화와 관련된 보도가 주를 이루고 있으며, 투자자들의 관망세가 뚜렷해지고 있습니다.
-            </p>
-          </div>
-        </section>
-
+    <main className="mx-auto w-full max-w-[1100px] flex-grow px-6 py-12 lg:px-8">
+      <div className="mb-10">
+        <div className="mb-3 inline-flex rounded-full bg-blue-50 px-3 py-1 text-xs font-bold text-primary">
+          Methodology v1
+        </div>
+        <h1 className="text-4xl font-black tracking-tight text-gray-900">사건 위험과 비중 산정 기준</h1>
+        <p className="mt-4 max-w-[760px] text-sm leading-7 text-gray-600">
+          StockEcho는 기사 문체의 감성을 투자수익률로 바꾸지 않습니다. 과거 유사 Event의 실제 가격 반응을 관측하고,
+          표본 수와 불확실성을 함께 표시한 뒤 포트폴리오 비중 시뮬레이션에 사용합니다.
+        </p>
       </div>
 
-      {/* Bottom Area (Placeholders for Charts) */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <section className="bg-white p-8 rounded-2xl shadow-sm border border-gray-100 col-span-1 min-h-[300px] flex flex-col">
-          <h3 className="font-bold mb-4">상대강도지수 (RSI)</h3>
-          <div className="flex-1 flex items-end justify-between px-4 pb-4 mt-8 relative">
-             {/* RSI Mock Chart Lines */}
-             <div className="w-full absolute inset-0 bottom-8 flex flex-col justify-end opacity-20">
-               <div className="border-b border-gray-400 h-1/3 w-full"></div>
-               <div className="border-b border-gray-400 h-1/3 w-full"></div>
-             </div>
-             <div className="text-xs text-gray-400 font-bold flex flex-col items-center z-10"><span className="text-primary text-2xl font-black mb-2">.</span>SAMSUNG</div>
-             <div className="text-xs text-gray-400 font-bold flex flex-col items-center z-10"><span className="text-primary text-2xl font-black mb-6">.</span>SK HYNIX</div>
-             <div className="text-xs text-gray-400 font-bold flex flex-col items-center z-10"><span className="text-primary text-2xl font-black mb-10">.</span>SECTOR AVG</div>
-             <div className="text-xs text-gray-400 font-bold flex flex-col items-center z-10"><span className="text-negative text-2xl font-black mb-4">.</span>NAVER</div>
-          </div>
-        </section>
+      <div className="grid gap-5 md:grid-cols-2">
+        {steps.map((step) => (
+          <section key={step.title} className="rounded-2xl border border-gray-100 bg-white p-7 shadow-sm">
+            <h2 className="text-lg font-black text-gray-900">{step.title}</h2>
+            <p className="mt-3 text-sm leading-7 text-gray-600">{step.body}</p>
+          </section>
+        ))}
+      </div>
 
-        <section className="bg-white p-8 rounded-2xl shadow-sm border border-gray-100 col-span-1 lg:col-span-2 min-h-[300px] flex flex-col">
-          <h3 className="font-bold mb-4">리스크 확산 시각화</h3>
-          <div className="flex-1 bg-gray-50 rounded-xl flex items-center justify-center border border-gray-100">
-            <div className="text-center">
-              <h4 className="font-bold text-gray-700 text-lg mb-2">섹터 히트맵 안정성</h4>
-              <p className="text-gray-500 text-sm">플랫폼 서비스 섹터에서 시장 변동성 클러스터가 확인되었습니다.</p>
-            </div>
-          </div>
+      <section className="mt-8 rounded-2xl bg-gray-950 p-8 text-white">
+        <h2 className="text-2xl font-black">서비스 목적함수</h2>
+        <div className="mt-5 overflow-x-auto rounded-xl bg-white/10 px-5 py-4 font-mono text-sm leading-7">
+          minimize portfolio variance + downside risk + turnover penalty
+          <br />
+          subject to event safety target, weight sum = 100%, long-only, max weight, max turnover
+        </div>
+        <p className="mt-5 text-sm leading-7 text-gray-300">
+          Event Safety는 1 − 사건 하락확률로 정의한 서비스 지표입니다. 이는 Pedersen et al. (2021)의
+          ESG-efficient frontier에서 “금융 위험과 책임 특성의 trade-off를 경계로 보여준다”는 구조를 참고했지만,
+          논문의 기업 ESG 점수나 ESG-CAPM을 재현한 값은 아닙니다.
+        </p>
+      </section>
+
+      <div className="mt-8 grid gap-5 md:grid-cols-3">
+        <section className="rounded-2xl border border-amber-200 bg-amber-50 p-6">
+          <h2 className="font-black text-amber-900">표본 부족</h2>
+          <p className="mt-2 text-sm leading-6 text-amber-800">
+            유사 사례가 3건 미만이면 insufficient, 3~7건이면 low로 표시하며 목표 비중을 만들지 않을 수 있습니다.
+          </p>
         </section>
+        <section className="rounded-2xl border border-amber-200 bg-amber-50 p-6">
+          <h2 className="font-black text-amber-900">확률의 의미</h2>
+          <p className="mt-2 text-sm leading-6 text-amber-800">
+            현재 운영값은 유사도 가중 경험분포입니다. 시간순 holdout과 calibration을 통과한 모델만 향후 교체됩니다.
+          </p>
+        </section>
+        <section className="rounded-2xl border border-amber-200 bg-amber-50 p-6">
+          <h2 className="font-black text-amber-900">주문 기능 없음</h2>
+          <p className="mt-2 text-sm leading-6 text-amber-800">
+            목표 비중과 정수 수량은 교육용 계산값입니다. 세금·수수료·슬리피지와 실제 체결을 보장하지 않습니다.
+          </p>
+        </section>
+      </div>
+
+      <div className="mt-10 flex justify-center">
+        <Link href="/rebalancing" className="rounded-xl bg-primary px-6 py-3 text-sm font-bold text-white hover:bg-blue-600">
+          내 포트폴리오로 계산하기
+        </Link>
       </div>
     </main>
   );

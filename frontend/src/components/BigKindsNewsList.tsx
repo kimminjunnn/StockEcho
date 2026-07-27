@@ -27,7 +27,7 @@ export default function BigKindsNewsList({ stockName }: { stockName: string }) {
         if (!res.ok) throw new Error('Failed');
         const data = await res.json();
         if (active) setArticles(data.articles || []);
-      } catch (err) {
+      } catch {
         if (active) setError(true);
       } finally {
         if (active) setLoading(false);

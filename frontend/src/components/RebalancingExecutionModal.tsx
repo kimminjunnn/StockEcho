@@ -1,115 +1,82 @@
 "use client";
 
-import React from 'react';
-import Link from 'next/link';
+import Link from "next/link";
+import type { RebalancingResult } from "@/lib/portfolioEngine";
 
 interface RebalancingExecutionModalProps {
   isOpen: boolean;
   onClose: () => void;
+  result: RebalancingResult | null;
 }
 
-export default function RebalancingExecutionModal({ isOpen, onClose }: RebalancingExecutionModalProps) {
-  if (!isOpen) return null;
+function actionText(value: number | undefined): string {
+  if (value === undefined || value === 0) return "유지";
+  return value > 0 ? `${value.toLocaleString("ko-KR")}주 계산상 매수` : `${Math.abs(value).toLocaleString("ko-KR")}주 계산상 매도`;
+}
+
+export default function RebalancingExecutionModal({
+  isOpen,
+  onClose,
+  result,
+}: RebalancingExecutionModalProps) {
+  if (!isOpen || !result) return null;
 
   return (
-    <div className="fixed inset-0 z-[100] flex justify-center items-center p-4 bg-gray-900 bg-opacity-40 backdrop-blur-sm">
-      <div className="bg-white w-full max-w-[700px] rounded-[16px] shadow-2xl flex flex-col relative animate-fade-in-up">
-        
-        {/* Header */}
-        <div className="px-8 pt-8 pb-4">
-          <button 
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-gray-900/40 p-4 backdrop-blur-sm">
+      <div className="relative flex w-full max-w-[760px] flex-col rounded-2xl bg-white shadow-2xl">
+        <div className="px-8 pb-4 pt-8">
+          <button
+            type="button"
             onClick={onClose}
-            className="absolute top-6 right-6 text-gray-400 hover:text-gray-800 transition-colors"
+            aria-label="계산 내역 닫기"
+            className="absolute right-6 top-6 rounded-full p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-800"
           >
-            <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"/>
-            </svg>
+            <span className="material-symbols-outlined">close</span>
           </button>
-          
-          <h2 className="text-xl font-bold text-gray-800 mb-2">포트폴리오 리밸런싱 실행</h2>
-          <p className="text-gray-600 font-medium">AI 추천 비중에 맞추기 위해 필요한 매수/매도 수량을 확인하세요.</p>
+          <div className="mb-3 inline-flex rounded-full bg-blue-50 px-3 py-1 text-xs font-bold text-primary">
+            계산상 수량 · 주문 전송 없음
+          </div>
+          <h2 className="text-xl font-bold text-gray-900">리밸런싱 계산 내역</h2>
+          <p className="mt-2 text-sm text-gray-600">
+            현재가와 목표 비중을 기준으로 정수 수량을 반올림한 참고값입니다.
+          </p>
         </div>
 
-        {/* Content */}
         <div className="px-8 pb-8 pt-2">
-          {/* Table */}
-          <div className="rounded-[12px] border border-gray-200 overflow-hidden mb-6">
-            <table className="w-full text-left bg-white">
-              <thead className="bg-[#f8f9fa] border-b border-gray-200">
+          <div className="mb-6 overflow-x-auto rounded-xl border border-gray-200">
+            <table className="w-full min-w-[640px] text-left">
+              <thead className="border-b border-gray-200 bg-gray-50 text-xs font-bold text-gray-500">
                 <tr>
-                  <th className="py-4 px-6 text-gray-500 font-bold text-sm">종목명</th>
-                  <th className="py-4 px-6 text-gray-500 font-bold text-sm text-center">보유 수량</th>
-                  <th className="py-4 px-6 text-gray-500 font-bold text-sm text-center">현재 비중</th>
-                  <th className="py-4 px-6 text-gray-500 font-bold text-sm text-center">목표 비중</th>
-                  <th className="py-4 px-6 text-gray-500 font-bold text-sm text-center">추천 액션</th>
+                  <th className="px-5 py-4">종목명</th>
+                  <th className="px-5 py-4 text-center">보유 수량</th>
+                  <th className="px-5 py-4 text-center">현재 → 목표</th>
+                  <th className="px-5 py-4 text-center">계산상 변화</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {/* NAVER */}
-                <tr className="hover:bg-gray-50 transition-colors">
-                  <td className="py-5 px-6">
-                    <Link href="/stock/035420" className="text-primary font-bold text-[15px] hover:underline" onClick={onClose}>
-                      NAVER
-                    </Link>
-                  </td>
-                  <td className="py-5 px-6 text-center font-medium text-gray-800">336주</td>
-                  <td className="py-5 px-6 text-center text-gray-600">20%</td>
-                  <td className="py-5 px-6 text-center font-bold text-primary">12%</td>
-                  <td className="py-5 px-6 text-center flex justify-center">
-                    <span className="inline-block bg-[#ffeef0] text-[#e55039] font-bold py-1.5 px-4 rounded-[6px] text-sm">
-                      134주 판매
-                    </span>
-                  </td>
-                </tr>
-                {/* 라인 */}
-                <tr className="hover:bg-gray-50 transition-colors">
-                  <td className="py-5 px-6">
-                    <Link href="/stock/4689" className="text-primary font-bold text-[15px] hover:underline" onClick={onClose}>
-                      라인
-                    </Link>
-                  </td>
-                  <td className="py-5 px-6 text-center font-medium text-gray-800">210주</td>
-                  <td className="py-5 px-6 text-center text-gray-600">30%</td>
-                  <td className="py-5 px-6 text-center font-bold text-primary">28%</td>
-                  <td className="py-5 px-6 text-center flex justify-center">
-                    <span className="inline-block bg-[#ffeef0] text-[#e55039] font-bold py-1.5 px-4 rounded-[6px] text-sm">
-                      11주 판매
-                    </span>
-                  </td>
-                </tr>
-                {/* 삼성전자 */}
-                <tr className="hover:bg-gray-50 transition-colors">
-                  <td className="py-5 px-6">
-                    <Link href="/stock/005930" className="text-primary font-bold text-[15px] hover:underline" onClick={onClose}>
-                      삼성전자
-                    </Link>
-                  </td>
-                  <td className="py-5 px-6 text-center font-medium text-gray-800">842주</td>
-                  <td className="py-5 px-6 text-center text-gray-600">50%</td>
-                  <td className="py-5 px-6 text-center font-bold text-primary">60%</td>
-                  <td className="py-5 px-6 text-center flex justify-center">
-                    <span className="inline-block bg-[#3182f6] text-white font-bold py-1.5 px-4 rounded-[6px] text-sm shadow-sm">
-                      64주 구매
-                    </span>
-                  </td>
-                </tr>
+                {result.positions.map((position) => (
+                  <tr key={position.code}>
+                    <td className="px-5 py-4">
+                      <Link href={`/stock/${position.code}`} className="font-bold text-primary hover:underline" onClick={onClose}>
+                        {position.name}
+                      </Link>
+                    </td>
+                    <td className="px-5 py-4 text-center">{position.quantity.toLocaleString("ko-KR")}주</td>
+                    <td className="px-5 py-4 text-center tabular-nums">
+                      {(position.currentWeight * 100).toFixed(1)}% → {((position.targetWeight ?? position.currentWeight) * 100).toFixed(1)}%
+                    </td>
+                    <td className="px-5 py-4 text-center text-sm font-bold text-gray-800">
+                      {actionText(position.estimatedQuantityChange)}
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
-
-          {/* Fee Information Panel */}
-          <div className="bg-[#f8f9fa] border border-gray-200 rounded-[12px] p-5 flex items-start gap-3">
-            <div className="text-primary mt-0.5">
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-            </div>
-            <div>
-              <h3 className="text-gray-800 font-bold mb-1">리밸런싱 예상 수수료</h3>
-              <p className="text-gray-600 text-[15px]">
-                현재 시장가 기준으로 약 <span className="font-bold text-gray-900">12,450원</span>의 거래 수수료와 세금이 발생할 것으로 예상됩니다.
-              </p>
-            </div>
+          <div className="rounded-xl border border-blue-100 bg-blue-50 p-5 text-sm leading-relaxed text-gray-700">
+            추정 거래비용은 입력한 현재 평가금액과 {Math.round(result.turnover * 100)}% turnover,
+            10bp 가정으로 약 <strong>{Math.round(result.estimatedTransactionCost).toLocaleString("ko-KR")}원</strong>입니다.
+            실제 세금·수수료·체결가는 거래 환경에 따라 다릅니다.
           </div>
         </div>
       </div>

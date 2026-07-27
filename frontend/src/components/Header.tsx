@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useEffect, useState } from 'react';
-import Link from 'next/link';
+import React, { useEffect, useState } from "react";
+import Image from "next/image";
+import Link from "next/link";
 import { useSession, signIn, signOut } from "next-auth/react";
 
 interface KospiData {
@@ -19,7 +20,7 @@ export default function Header() {
     let isMounted = true;
     async function fetchKospi() {
       try {
-        const res = await fetch('/api/stock/kospi');
+        const res = await fetch("/api/stock/kospi");
         if (res.ok) {
           const json = await res.json();
           if (json.data && isMounted) {
@@ -27,7 +28,7 @@ export default function Header() {
           }
         }
       } catch (err) {
-        console.error('Failed to load KOSPI index:', err);
+        console.error("Failed to load KOSPI index:", err);
       }
     }
     fetchKospi();
@@ -37,17 +38,25 @@ export default function Header() {
   }, []);
 
   const formatPrice = (val?: number) => {
-    if (val === undefined || val === null || isNaN(val) || val === 0) return '2,581.39';
-    return val.toLocaleString('ko-KR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    if (val === undefined || val === null || isNaN(val) || val === 0)
+      return "2,581.39";
+    return val.toLocaleString("ko-KR", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
   };
 
   const formatChange = (change?: number, rate?: number) => {
-    if (change === undefined || change === null || (change === 0 && (!rate || rate === 0))) {
-      return '-14.21 (0.55%)';
+    if (
+      change === undefined ||
+      change === null ||
+      (change === 0 && (!rate || rate === 0))
+    ) {
+      return "-14.21 (0.55%)";
     }
     const absChange = Math.abs(change).toFixed(2);
     const absRate = Math.abs(rate || 0).toFixed(2);
-    const prefix = change > 0 ? '+' : change < 0 ? '-' : '';
+    const prefix = change > 0 ? "+" : change < 0 ? "-" : "";
     return `${prefix}${absChange} (${absRate}%)`;
   };
 
@@ -60,9 +69,16 @@ export default function Header() {
             aria-label="Stock Echo 홈으로 이동"
             className="flex items-center gap-2.5 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
           >
-            <img alt="Stock Echo Logo" className="h-8 w-8 object-contain" src="/logo-icon.svg" />
+            <Image
+              alt="Stock Echo Logo"
+              className="h-8 w-8 object-contain"
+              src="/logo-icon.svg"
+              width={32}
+              height={32}
+              priority
+            />
             <span className="font-display-lg text-[24px] font-black tracking-tight">
-              <span className="text-black dark:text-white">Stock </span>
+              <span className="text-black">Stock </span>
               <span className="text-[#3B82F6]">Echo</span>
             </span>
           </Link>
@@ -88,15 +104,27 @@ export default function Header() {
             </div>
           ) : session?.user ? (
             <div className="flex items-center gap-sm group relative">
-              <span className="font-title-sm text-sm font-bold">{session.user.name}님</span>
+              <span className="font-title-sm text-sm font-bold">
+                {session.user.name}님
+              </span>
               <div className="h-10 w-10 rounded-full bg-surface-container-highest overflow-hidden border border-outline-variant cursor-pointer">
-                <img className="h-full w-full object-cover" alt="Profile" src={session.user.image || "https://lh3.googleusercontent.com/aida-public/AB6AXuAWL9Tlw8Ft6xmYdXi49DDSdoW1WFEBHfcIR-eyhDPo4TrTVPkLfecZ5ENq93brGbbowzwOgrXLmTSULiR5pdUW5MMMlX1Qtbi_QFE3-KaUpRQo1k70AeVe3AChpsdJXHutz0qk2_vg4l30amTaqKIUo6hUjzJWWoeNZY4nxM4kjn8x5WqiAirlvUyKnQwVfZGYfDUTyJ_FzTK1T_LEvzT5bYolQeiCRzC0vOfWNshughGerafM84H_Kg"} />
+                <Image
+                  className="h-full w-full object-cover"
+                  alt="Profile"
+                  src={
+                    session.user.image ||
+                    "https://lh3.googleusercontent.com/aida-public/AB6AXuAWL9Tlw8Ft6xmYdXi49DDSdoW1WFEBHfcIR-eyhDPo4TrTVPkLfecZ5ENq93brGbbowzwOgrXLmTSULiR5pdUW5MMMlX1Qtbi_QFE3-KaUpRQo1k70AeVe3AChpsdJXHutz0qk2_vg4l30amTaqKIUo6hUjzJWWoeNZY4nxM4kjn8x5WqiAirlvUyKnQwVfZGYfDUTyJ_FzTK1T_LEvzT5bYolQeiCRzC0vOfWNshughGerafM84H_Kg"
+                  }
+                  width={40}
+                  height={40}
+                  unoptimized
+                />
               </div>
 
               {/* Hover Dropdown for Logout */}
               <div className="absolute right-0 top-12 mt-2 w-32 bg-white rounded-md shadow-lg py-1 border border-gray-100 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50">
-                <button 
-                  onClick={() => signOut({ callbackUrl: '/onboarding' })}
+                <button
+                  onClick={() => signOut({ callbackUrl: "/onboarding" })}
                   className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 hover:text-red-600 transition-colors"
                 >
                   로그아웃
@@ -105,14 +133,29 @@ export default function Header() {
             </div>
           ) : (
             <button
-              onClick={() => signIn('google')}
+              onClick={() => signIn("google")}
               className="bg-[#0059B9] hover:bg-blue-700 text-white text-sm font-bold py-2.5 px-6 rounded-full transition-all flex items-center gap-2 shadow-sm active:scale-95"
             >
-              <svg className="w-4 h-4 bg-white rounded-full p-[2px]" viewBox="0 0 24 24">
-                <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-                <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-                <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
-                <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+              <svg
+                className="w-4 h-4 bg-white rounded-full p-[2px]"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  fill="#4285F4"
+                  d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                />
+                <path
+                  fill="#34A853"
+                  d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                />
+                <path
+                  fill="#FBBC05"
+                  d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
+                />
+                <path
+                  fill="#EA4335"
+                  d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
+                />
               </svg>
               구글로 로그인
             </button>
@@ -122,4 +165,3 @@ export default function Header() {
     </header>
   );
 }
-

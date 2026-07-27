@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getPastIssueChartData } from '@/lib/kisApi';
+import { errorMessage } from '@/lib/errors';
 
 export async function GET(
   request: NextRequest,
@@ -17,9 +18,9 @@ export async function GET(
 
     const data = await getPastIssueChartData(code, startDate, endDate);
     return NextResponse.json({ success: true, data });
-  } catch (error: any) {
+  } catch (error: unknown) {
     return NextResponse.json(
-      { success: false, message: error.message },
+      { success: false, message: errorMessage(error, 'Failed to fetch issue chart') },
       { status: 500 }
     );
   }

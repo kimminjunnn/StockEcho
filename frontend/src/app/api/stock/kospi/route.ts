@@ -1,7 +1,8 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { getKospiIndex } from '@/lib/kisApi';
+import { errorMessage } from '@/lib/errors';
 
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
     const kospiData = await getKospiIndex();
     
@@ -25,12 +26,12 @@ export async function GET(request: NextRequest) {
         raw: kospiData,
       },
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('KOSPI API Route Error:', error);
     // Return fallback KOSPI index matching the screenshot design if API rate limit occurs
     return NextResponse.json({
       success: false,
-      error: error.message || 'Failed to fetch KOSPI index',
+      error: errorMessage(error, 'Failed to fetch KOSPI index'),
       data: {
         price: 2581.39,
         change: -14.21,

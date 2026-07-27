@@ -1,53 +1,44 @@
-import fs from 'fs';
-import path from 'path';
+export type KisRecord = Record<string, string>;
 
-function getEnv(key: string) {
-  if (process.env[key]) return process.env[key];
-  try {
-    const pathsToTry = [
-      path.resolve(process.cwd(), '.env'),
-      path.resolve(process.cwd(), '../.env'),
-      path.resolve(process.cwd(), '../../.env'),
-      '/Users/seojieun/Desktop/StockEcho/.env'
-    ];
-    
-    let envFile = '';
-    for (const p of pathsToTry) {
-      if (fs.existsSync(p)) {
-        envFile = fs.readFileSync(p, 'utf8');
-        break;
-      }
-    }
-    
-    const match = envFile.match(new RegExp(`^${key}=(.*)$`, 'm'));
-    return match ? match[1].trim() : undefined;
-  } catch {
-    return undefined;
-  }
+interface KisConfig {
+  appKey: string;
+  appSecret: string;
+  domain: string;
+  cacheKey: string;
 }
 
-const KIS_ENV = getEnv('KIS_ENV') || 'paper';
-const APP_KEY = getEnv('KIS_APP_KEY') || '';
-const APP_SECRET = getEnv('KIS_APP_SECRET') || '';
-
-const DOMAIN = KIS_ENV === 'real' 
-  ? 'https://openapi.koreainvestment.com:9443' 
-  : 'https://openapivts.koreainvestment.com:29443';
+function getKisConfig(): KisConfig {
+  const appKey = process.env.KIS_APP_KEY?.trim() ?? '';
+  const appSecret = process.env.KIS_APP_SECRET?.trim() ?? '';
+  if (!appKey || !appSecret) {
+    throw new Error('KIS API 키 또는 시크릿이 설정되지 않았습니다.');
+  }
+  const environment = process.env.KIS_ENV === 'real' ? 'real' : 'paper';
+  return {
+    appKey,
+    appSecret,
+    domain: environment === 'real'
+      ? 'https://openapi.koreainvestment.com:9443'
+      : 'https://openapivts.koreainvestment.com:29443',
+    cacheKey: `${environment}:${appKey}`,
+  };
+}
 
 let cachedToken = '';
 let tokenExpiration = 0;
 let tokenRequest: Promise<string> | null = null;
+let cachedConfigKey = '';
 
-async function issueAccessToken() {
-  const res = await fetch(`${DOMAIN}/oauth2/tokenP`, {
+async function issueAccessToken(config: KisConfig) {
+  const res = await fetch(`${config.domain}/oauth2/tokenP`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
       grant_type: 'client_credentials',
-      appkey: APP_KEY,
-      appsecret: APP_SECRET,
+      appkey: config.appKey,
+      appsecret: config.appSecret,
     }),
     cache: 'no-store',
   });
@@ -60,17 +51,22 @@ async function issueAccessToken() {
 
   const data = await res.json();
   cachedToken = data.access_token;
+  cachedConfigKey = config.cacheKey;
   tokenExpiration = Date.now() + 12 * 60 * 60 * 1000; 
 
   return cachedToken;
 }
 
 export async function getAccessToken() {
-  if (!APP_KEY || !APP_SECRET) {
-    throw new Error('API 키 또는 시크릿이 설정되지 않았습니다.');
-  }
+  return getAccessTokenFor(getKisConfig());
+}
 
-  if (cachedToken && Date.now() < tokenExpiration) {
+async function getAccessTokenFor(config: KisConfig) {
+  if (
+    cachedToken
+    && cachedConfigKey === config.cacheKey
+    && Date.now() < tokenExpiration
+  ) {
     return cachedToken;
   }
 
@@ -78,7 +74,7 @@ export async function getAccessToken() {
     return tokenRequest;
   }
 
-  tokenRequest = issueAccessToken();
+  tokenRequest = issueAccessToken(config);
   try {
     return await tokenRequest;
   } finally {
@@ -86,16 +82,17 @@ export async function getAccessToken() {
   }
 }
 
-export async function getStockPrice(stockCode: string) {
-  const token = await getAccessToken();
+export async function getStockPrice(stockCode: string): Promise<KisRecord> {
+  const config = getKisConfig();
+  const token = await getAccessTokenFor(config);
   
-  const res = await fetch(`${DOMAIN}/uapi/domestic-stock/v1/quotations/inquire-price?FID_COND_MRKT_DIV_CODE=J&FID_INPUT_ISCD=${stockCode}`, {
+  const res = await fetch(`${config.domain}/uapi/domestic-stock/v1/quotations/inquire-price?FID_COND_MRKT_DIV_CODE=J&FID_INPUT_ISCD=${stockCode}`, {
     method: 'GET',
     headers: {
       'Content-Type': 'application/json; charset=utf-8',
       'authorization': `Bearer ${token}`,
-      'appkey': APP_KEY,
-      'appsecret': APP_SECRET,
+      'appkey': config.appKey,
+      'appsecret': config.appSecret,
       'tr_id': 'FHKST01010100',
     },
     cache: 'no-store',
@@ -106,11 +103,15 @@ export async function getStockPrice(stockCode: string) {
   const data = await res.json();
   if (data.rt_cd !== '0') throw new Error(data.msg1 || 'API 오류가 발생했습니다.');
   
-  return data.output;
+  return data.output as KisRecord;
 }
 
-export async function getStockChartData(stockCode: string, period: 'D' | 'W' | 'M' | 'Y' = 'D') {
-  const token = await getAccessToken();
+export async function getStockChartData(
+  stockCode: string,
+  period: 'D' | 'W' | 'M' | 'Y' = 'D',
+): Promise<KisRecord[]> {
+  const config = getKisConfig();
+  const token = await getAccessTokenFor(config);
   
   const today = new Date();
   const pastDate = new Date();
@@ -130,13 +131,13 @@ export async function getStockChartData(stockCode: string, period: 'D' | 'W' | '
   const endDt = formatDate(today);
   const startDt = formatDate(pastDate);
 
-  const res = await fetch(`${DOMAIN}/uapi/domestic-stock/v1/quotations/inquire-daily-itemchartprice?FID_COND_MRKT_DIV_CODE=J&FID_INPUT_ISCD=${stockCode}&FID_INPUT_DATE_1=${startDt}&FID_INPUT_DATE_2=${endDt}&FID_PERIOD_DIV_CODE=${period}&FID_ORG_ADJ_PRC=0`, {
+  const res = await fetch(`${config.domain}/uapi/domestic-stock/v1/quotations/inquire-daily-itemchartprice?FID_COND_MRKT_DIV_CODE=J&FID_INPUT_ISCD=${stockCode}&FID_INPUT_DATE_1=${startDt}&FID_INPUT_DATE_2=${endDt}&FID_PERIOD_DIV_CODE=${period}&FID_ORG_ADJ_PRC=0`, {
     method: 'GET',
     headers: {
       'Content-Type': 'application/json; charset=utf-8',
       'authorization': `Bearer ${token}`,
-      'appkey': APP_KEY,
-      'appsecret': APP_SECRET,
+      'appkey': config.appKey,
+      'appsecret': config.appSecret,
       'tr_id': 'FHKST03010100',
     },
     cache: 'no-store',
@@ -150,23 +151,24 @@ export async function getStockChartData(stockCode: string, period: 'D' | 'W' | '
   const data = await res.json();
   if (data.rt_cd !== '0') throw new Error(data.msg1 || 'API 오류가 발생했습니다.');
   
-  return data.output2; 
+  return data.output2 as KisRecord[];
 }
 
-export async function getStockMinuteChartData(stockCode: string) {
-  const token = await getAccessToken();
+export async function getStockMinuteChartData(stockCode: string): Promise<KisRecord[]> {
+  const config = getKisConfig();
+  const token = await getAccessTokenFor(config);
   
   // Use a fixed hour or current time? 
   // For VTS and after hours, using "153000" (market close) is safer to get the whole day.
   const time = "153000";
 
-  const res = await fetch(`${DOMAIN}/uapi/domestic-stock/v1/quotations/inquire-time-itemchartprice?FID_ETC_CLS_CODE=&FID_COND_MRKT_DIV_CODE=J&FID_INPUT_ISCD=${stockCode}&FID_INPUT_HOUR_1=${time}&FID_PW_DATA_INCU_YN=N`, {
+  const res = await fetch(`${config.domain}/uapi/domestic-stock/v1/quotations/inquire-time-itemchartprice?FID_ETC_CLS_CODE=&FID_COND_MRKT_DIV_CODE=J&FID_INPUT_ISCD=${stockCode}&FID_INPUT_HOUR_1=${time}&FID_PW_DATA_INCU_YN=N`, {
     method: 'GET',
     headers: {
       'Content-Type': 'application/json; charset=utf-8',
       'authorization': `Bearer ${token}`,
-      'appkey': APP_KEY,
-      'appsecret': APP_SECRET,
+      'appkey': config.appKey,
+      'appsecret': config.appSecret,
       'tr_id': 'FHKST03010200',
     },
     cache: 'no-store',
@@ -180,19 +182,24 @@ export async function getStockMinuteChartData(stockCode: string) {
   const data = await res.json();
   if (data.rt_cd !== '0') throw new Error(data.msg1 || 'API 오류가 발생했습니다.');
   
-  return data.output2; 
+  return data.output2 as KisRecord[];
 }
 
-export async function getPastIssueChartData(stockCode: string, startDate: string, endDate: string) {
-  const token = await getAccessToken();
+export async function getPastIssueChartData(
+  stockCode: string,
+  startDate: string,
+  endDate: string,
+): Promise<KisRecord[]> {
+  const config = getKisConfig();
+  const token = await getAccessTokenFor(config);
 
-  const res = await fetch(`${DOMAIN}/uapi/domestic-stock/v1/quotations/inquire-daily-itemchartprice?FID_COND_MRKT_DIV_CODE=J&FID_INPUT_ISCD=${stockCode}&FID_INPUT_DATE_1=${startDate}&FID_INPUT_DATE_2=${endDate}&FID_PERIOD_DIV_CODE=D&FID_ORG_ADJ_PRC=0`, {
+  const res = await fetch(`${config.domain}/uapi/domestic-stock/v1/quotations/inquire-daily-itemchartprice?FID_COND_MRKT_DIV_CODE=J&FID_INPUT_ISCD=${stockCode}&FID_INPUT_DATE_1=${startDate}&FID_INPUT_DATE_2=${endDate}&FID_PERIOD_DIV_CODE=D&FID_ORG_ADJ_PRC=0`, {
     method: 'GET',
     headers: {
       'Content-Type': 'application/json; charset=utf-8',
       'authorization': `Bearer ${token}`,
-      'appkey': APP_KEY,
-      'appsecret': APP_SECRET,
+      'appkey': config.appKey,
+      'appsecret': config.appSecret,
       'tr_id': 'FHKST03010100',
     },
     cache: 'no-store',
@@ -206,19 +213,20 @@ export async function getPastIssueChartData(stockCode: string, startDate: string
   const data = await res.json();
   if (data.rt_cd !== '0') throw new Error(data.msg1 || 'API 오류가 발생했습니다.');
   
-  return data.output2; 
+  return data.output2 as KisRecord[];
 }
 
-export async function getStockInvestorData(stockCode: string) {
-  const token = await getAccessToken();
+export async function getStockInvestorData(stockCode: string): Promise<KisRecord[]> {
+  const config = getKisConfig();
+  const token = await getAccessTokenFor(config);
   
-  const res = await fetch(`${DOMAIN}/uapi/domestic-stock/v1/quotations/inquire-investor?FID_COND_MRKT_DIV_CODE=J&FID_INPUT_ISCD=${stockCode}`, {
+  const res = await fetch(`${config.domain}/uapi/domestic-stock/v1/quotations/inquire-investor?FID_COND_MRKT_DIV_CODE=J&FID_INPUT_ISCD=${stockCode}`, {
     method: 'GET',
     headers: {
       'Content-Type': 'application/json; charset=utf-8',
       'authorization': `Bearer ${token}`,
-      'appkey': APP_KEY,
-      'appsecret': APP_SECRET,
+      'appkey': config.appKey,
+      'appsecret': config.appSecret,
       'tr_id': 'FHKST01010900',
     },
     cache: 'no-store',
@@ -229,19 +237,20 @@ export async function getStockInvestorData(stockCode: string) {
   const data = await res.json();
   if (data.rt_cd !== '0') throw new Error(data.msg1 || 'API 오류가 발생했습니다.');
   
-  return data.output;
+  return data.output as KisRecord[];
 }
 
-export async function getStockOrderbook(stockCode: string) {
-  const token = await getAccessToken();
+export async function getStockOrderbook(stockCode: string): Promise<KisRecord> {
+  const config = getKisConfig();
+  const token = await getAccessTokenFor(config);
   
-  const res = await fetch(`${DOMAIN}/uapi/domestic-stock/v1/quotations/inquire-asking-price-exp-ccn?FID_COND_MRKT_DIV_CODE=J&FID_INPUT_ISCD=${stockCode}`, {
+  const res = await fetch(`${config.domain}/uapi/domestic-stock/v1/quotations/inquire-asking-price-exp-ccn?FID_COND_MRKT_DIV_CODE=J&FID_INPUT_ISCD=${stockCode}`, {
     method: 'GET',
     headers: {
       'Content-Type': 'application/json; charset=utf-8',
       'authorization': `Bearer ${token}`,
-      'appkey': APP_KEY,
-      'appsecret': APP_SECRET,
+      'appkey': config.appKey,
+      'appsecret': config.appSecret,
       'tr_id': 'FHKST01010200',
     },
     cache: 'no-store',
@@ -252,19 +261,20 @@ export async function getStockOrderbook(stockCode: string) {
   const data = await res.json();
   if (data.rt_cd !== '0') throw new Error(data.msg1 || 'API 오류가 발생했습니다.');
   
-  return data.output1;
+  return data.output1 as KisRecord;
 }
 
-export async function getKospiIndex() {
-  const token = await getAccessToken();
+export async function getKospiIndex(): Promise<KisRecord> {
+  const config = getKisConfig();
+  const token = await getAccessTokenFor(config);
   
-  const res = await fetch(`${DOMAIN}/uapi/domestic-stock/v1/quotations/inquire-index-price?FID_COND_MRKT_DIV_CODE=U&FID_INPUT_ISCD=0001`, {
+  const res = await fetch(`${config.domain}/uapi/domestic-stock/v1/quotations/inquire-index-price?FID_COND_MRKT_DIV_CODE=U&FID_INPUT_ISCD=0001`, {
     method: 'GET',
     headers: {
       'Content-Type': 'application/json; charset=utf-8',
       'authorization': `Bearer ${token}`,
-      'appkey': APP_KEY,
-      'appsecret': APP_SECRET,
+      'appkey': config.appKey,
+      'appsecret': config.appSecret,
       'tr_id': 'FHPUP02100000',
     },
     cache: 'no-store',
@@ -275,5 +285,5 @@ export async function getKospiIndex() {
   const data = await res.json();
   if (data.rt_cd !== '0') throw new Error(data.msg1 || 'API 오류가 발생했습니다.');
   
-  return data.output;
+  return data.output as KisRecord;
 }

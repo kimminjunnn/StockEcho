@@ -69,12 +69,12 @@
   --spacing-base: 8px;
   --spacing-sm: 8px;
   --spacing-md: 16px;
-  --font-body-md: "Hanken Grotesk", sans-serif;
-  --font-headline-md: "Hanken Grotesk", sans-serif;
-  --font-display-lg: "Hanken Grotesk", sans-serif;
-  --font-label-caps: "Hanken Grotesk", sans-serif;
-  --font-body-sm: "Hanken Grotesk", sans-serif;
-  --font-title-sm: "Hanken Grotesk", sans-serif;
+  --font-body-md: ui-sans-serif, system-ui, sans-serif;
+  --font-headline-md: ui-sans-serif, system-ui, sans-serif;
+  --font-display-lg: ui-sans-serif, system-ui, sans-serif;
+  --font-label-caps: ui-sans-serif, system-ui, sans-serif;
+  --font-body-sm: ui-sans-serif, system-ui, sans-serif;
+  --font-title-sm: ui-sans-serif, system-ui, sans-serif;
 }
 
 
@@ -82,7 +82,7 @@
   font-variation-settings: "FILL" 0, "wght" 400, "GRAD" 0, "opsz" 24;
 }
 body {
-  font-family: "Hanken Grotesk", sans-serif;
+  font-family: ui-sans-serif, system-ui, sans-serif;
   background-color: var(--color-background);
   color: var(--color-on-background);
 }

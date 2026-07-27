@@ -1,5 +1,18 @@
 import { NextResponse } from 'next/server';
 
+interface BigKindsItem {
+  NEWS_ID?: string;
+  TITLE?: string;
+  CONTENT?: string;
+  PROVIDER_LINK_PAGE?: string;
+  DATE?: string;
+  PROVIDER?: string;
+}
+
+interface BigKindsResponse {
+  resultList?: BigKindsItem[];
+}
+
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const stockName = searchParams.get('stockName');
@@ -63,22 +76,19 @@ export async function GET(request: Request) {
       throw new Error(`BigKinds API responded with status: ${response.status}`);
     }
 
-    const data = await response.json();
+    const data = await response.json() as BigKindsResponse;
     
-    let articles = [];
-    if (data.resultList && Array.isArray(data.resultList)) {
-      articles = data.resultList.map((item: any) => ({
-        id: item.NEWS_ID,
-        title: item.TITLE.replace(/<[^>]*>?/gm, ''), // Remove HTML tags if any
-        content: item.CONTENT.replace(/<[^>]*>?/gm, '').substring(0, 100) + '...',
-        url: item.PROVIDER_LINK_PAGE,
-        date: item.DATE,
-        provider: item.PROVIDER
-      }));
-    }
+    const articles = (data.resultList ?? []).map((item) => ({
+      id: item.NEWS_ID ?? '',
+      title: (item.TITLE ?? '').replace(/<[^>]*>?/gm, ''), // Remove HTML tags if any
+      content: `${(item.CONTENT ?? '').replace(/<[^>]*>?/gm, '').substring(0, 100)}...`,
+      url: item.PROVIDER_LINK_PAGE ?? '',
+      date: item.DATE ?? '',
+      provider: item.PROVIDER ?? '',
+    }));
 
     return NextResponse.json({ articles });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Error fetching from BigKinds:', error);
     return NextResponse.json({ error: 'Failed to fetch news data' }, { status: 500 });
   }

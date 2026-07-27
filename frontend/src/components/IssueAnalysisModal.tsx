@@ -16,7 +16,9 @@ import type {
   HistoricalIssueApiResponse,
   HistoricalIssueEvent,
 } from "@/lib/historicalIssues";
+import { estimateHistoricalReaction } from "@/lib/historicalEstimate";
 import type { StockIssue } from "@/lib/issues";
+import type { EventRiskApiResponse, EventRiskForecast } from "@/lib/riskForecasts";
 
 interface IssueAnalysisModalProps {
   isOpen: boolean;
@@ -30,7 +32,7 @@ type AnalysisState =
   | { status: "ready"; data: HistoricalIssueAnalysis; error: null }
   | { status: "error"; data: null; error: string };
 
-type HorizonKey = "d1" | "d5" | "d15" | "d30";
+type HorizonKey = "d1" | "d5" | "d20";
 
 const horizonOptions: ReadonlyArray<{
   key: HorizonKey;
@@ -39,8 +41,7 @@ const horizonOptions: ReadonlyArray<{
 }> = [
   { key: "d1", label: "1일", points: ["d1"] },
   { key: "d5", label: "5일", points: ["d1", "d5"] },
-  { key: "d15", label: "15일", points: ["d1", "d5", "d15"] },
-  { key: "d30", label: "30일", points: ["d1", "d5", "d15", "d30"] },
+  { key: "d20", label: "20일", points: ["d1", "d5", "d20"] },
 ];
 
 const seriesColors = ["#3182F6", "#8B95A1", "#B0B8C1", "#D1D6DB"];
@@ -61,6 +62,12 @@ function returnColor(value: number | null): string {
   if (value > 0) return "text-chart-up";
   if (value < 0) return "text-chart-down";
   return "text-on-surface";
+}
+
+function directionLabel(value: number): string {
+  if (value > 0.05) return "상승";
+  if (value < -0.05) return "하락";
+  return "보합";
 }
 
 function articleUrl(event: HistoricalIssueEvent): string | null {
@@ -200,6 +207,7 @@ function ResultLayout({
   setSelectedHorizon,
   selectedEventId,
   setSelectedEventId,
+  riskForecast,
   onClose,
 }: {
   analysis: HistoricalIssueAnalysis;
@@ -208,6 +216,7 @@ function ResultLayout({
   setSelectedHorizon: (value: HorizonKey) => void;
   selectedEventId: string;
   setSelectedEventId: (value: string) => void;
+  riskForecast: EventRiskForecast | null;
   onClose: () => void;
 }) {
   const ownEvents = analysis.events.filter(
@@ -250,6 +259,27 @@ function ResultLayout({
       ? selectedValues.reduce((sum, value) => sum + value, 0)
         / selectedValues.length
       : null;
+  const historicalEstimate = useMemo(
+    () => estimateHistoricalReaction(analysis.events, selectedHorizon),
+    [analysis.events, selectedHorizon],
+  );
+  const storedMedian = riskForecast?.forecast.returnPercentiles.p50 ?? null;
+  const expectedReturn = storedMedian
+    ?? historicalEstimate.expectedReturnPercent;
+  const expectedP10 = riskForecast?.forecast.returnPercentiles.p10
+    ?? historicalEstimate.returnRange.p10;
+  const expectedP90 = riskForecast?.forecast.returnPercentiles.p90
+    ?? historicalEstimate.returnRange.p90;
+  const expectedLossProbability = riskForecast?.forecast.lossProbability
+    ?? historicalEstimate.lossProbability;
+  const estimateSampleCount = riskForecast?.forecast.observedEventCount
+    ?? historicalEstimate.observedEventCount;
+  const estimateConfidence = riskForecast?.forecast.confidence
+    ?? historicalEstimate.confidence;
+  const estimateIsProductionEligible = Boolean(
+    riskForecast?.forecast.productionEligible && storedMedian !== null,
+  );
+  const estimateUsesStoredForecast = storedMedian !== null;
 
   return (
     <div className="relative block lg:grid lg:min-h-0 lg:flex-1 lg:grid-cols-[42%_58%]">
@@ -375,6 +405,69 @@ function ResultLayout({
             추정하지 않았습니다.
           </div>
         )}
+
+        <section className="mt-md rounded-2xl border border-primary/20 bg-primary-fixed/30 p-md">
+          <div className="flex flex-wrap items-start justify-between gap-sm">
+            <div>
+              <p className="text-xs font-black text-primary">현재 Event 경험분포 forecast</p>
+              <p className="mt-1 text-[11px] leading-relaxed text-on-surface-variant">
+                과거 관측 그래프와 분리된 현재 사건의 불확실성 추정치입니다.
+              </p>
+            </div>
+            {riskForecast && (
+              <span className="rounded-full bg-surface px-sm py-xs text-[10px] font-bold text-outline">
+                {riskForecast.forecast.confidence} · 표본 {riskForecast.forecast.observedEventCount}건
+              </span>
+            )}
+          </div>
+          {!riskForecast ? (
+            <p className="mt-sm text-sm font-bold text-outline">
+              저장 forecast가 없어 화면의 과거 사례로 탐색적 추정치를 계산합니다.
+            </p>
+          ) : riskForecast.forecast.returnPercentiles.p50 === null ? (
+            <div className="mt-sm rounded-xl bg-surface/80 p-sm">
+              <p className="text-sm font-black text-on-surface">저장 forecast의 가격 관측 부족</p>
+              <p className="mt-1 text-[11px] leading-relaxed text-outline">
+                아래 화면에 표시된 과거 가격 사례가 있으면 별도의 탐색적
+                추정치로 계산합니다.
+              </p>
+            </div>
+          ) : (
+            <div className="mt-sm grid grid-cols-3 gap-xs">
+              <div className="rounded-xl bg-surface p-sm text-center">
+                <p className="text-[10px] font-bold text-outline">
+                  {riskForecast.forecast.productionEligible ? "하락 확률" : "참고 하락 빈도"}
+                </p>
+                <p className="mt-1 text-xl font-black text-error">
+                  {Math.round((riskForecast.forecast.lossProbability ?? 0) * 100)}%
+                </p>
+              </div>
+              <div className="rounded-xl bg-surface p-sm text-center">
+                <p className="text-[10px] font-bold text-outline">중앙값</p>
+                <p className="mt-1 text-xl font-black text-on-surface">
+                  {formatPercent(riskForecast.forecast.returnPercentiles.p50)}
+                </p>
+              </div>
+              <div className="rounded-xl bg-surface p-sm text-center">
+                <p className="text-[10px] font-bold text-outline">하방 10%</p>
+                <p className="mt-1 text-xl font-black text-error">
+                  {formatPercent(riskForecast.forecast.returnPercentiles.p10)}
+                </p>
+              </div>
+            </div>
+          )}
+          {riskForecast
+            && !riskForecast.forecast.productionEligible
+            && riskForecast.forecast.returnPercentiles.p50 !== null && (
+              <p className="mt-xs text-[10px] leading-relaxed text-outline">
+                표본 gate를 통과하지 않은 탐색적 수치입니다. 리밸런싱 비중
+                계산에는 사용하지 않습니다.
+              </p>
+            )}
+          {riskForecast?.stale && (
+            <p className="mt-xs text-[10px] font-bold text-warning">갱신 시각이 지난 결과입니다.</p>
+          )}
+        </section>
 
         <div className="mt-lg grid min-h-[390px] grid-cols-1 gap-md sm:grid-cols-[88px_minmax(0,1fr)]">
           <div className="grid grid-cols-2 gap-xs sm:flex sm:flex-col sm:justify-center">
@@ -529,12 +622,104 @@ function ResultLayout({
           {analysis.cacheHit
             ? "동일 요청의 저장된 분석 결과를 사용했습니다."
             : analysis.search.naverBackfillUsed
-              ? `저장 Event가 부족해 NAVER 보충 검색을 ${analysis.search.naverCallCount}회 실행했습니다.`
+              ? `백그라운드 분석에서 NAVER 보충 검색을 ${analysis.search.naverCallCount}회 사용했습니다.`
               : "Supabase에 저장된 Event에서 품질 기준을 통과한 사례를 찾았습니다."}
           <span className="ml-1">
             NAVER 검색어: {analysis.target.searchKeywords.join(" · ")}
           </span>
         </div>
+
+        <section
+          aria-label="현재 종목 예상 변동"
+          className="mt-md overflow-hidden rounded-2xl border border-primary/25 bg-[linear-gradient(135deg,#EDF5FF_0%,#F8FBFF_52%,#FFFFFF_100%)]"
+        >
+          <div className="border-b border-primary/15 px-lg py-md">
+            <div className="flex flex-wrap items-center justify-between gap-sm">
+              <div>
+                <p className="text-[11px] font-black tracking-[0.08em] text-primary">
+                  STOCKECHO ESTIMATE
+                </p>
+                <h3 className="mt-1 text-xl font-black text-on-surface">
+                  그래서 이 사건 뒤 주가는?
+                </h3>
+              </div>
+              <span
+                className={`rounded-full px-sm py-xs text-[10px] font-black ${
+                  estimateIsProductionEligible
+                    ? "bg-primary text-on-primary"
+                    : "bg-warning/15 text-on-surface-variant"
+                }`}
+              >
+                {estimateIsProductionEligible ? "검증 기준 통과" : "탐색적 추정"}
+              </span>
+            </div>
+          </div>
+
+          {expectedReturn === null ? (
+            <div className="px-lg py-lg">
+              <p className="text-base font-black text-on-surface">
+                D+{selectedHorizon.slice(1)} 가격 관측이 없어 아직 변동률을 계산할 수 없습니다.
+              </p>
+              <p className="mt-xs text-xs leading-relaxed text-outline">
+                다른 기간을 선택하면 확보된 거래일 관측치로 바로 다시 계산합니다.
+                관측하지 않은 값을 0%로 채우지는 않습니다.
+              </p>
+            </div>
+          ) : (
+            <div className="px-lg py-lg">
+              <div className="flex flex-col gap-md sm:flex-row sm:items-end sm:justify-between">
+                <div>
+                  <p className="text-xs font-bold text-outline">
+                    유사사건 기준 D+{selectedHorizon.slice(1)} 예상 중앙값
+                  </p>
+                  <p className={`mt-1 text-4xl font-black tracking-tight ${returnColor(expectedReturn)}`}>
+                    {formatPercent(expectedReturn)}
+                    <span className="ml-sm text-xl">
+                      {directionLabel(expectedReturn)} 예상
+                    </span>
+                  </p>
+                </div>
+                <div className="rounded-xl bg-surface/85 px-md py-sm text-left sm:text-right">
+                  <p className="text-[10px] font-bold text-outline">과거 분포 범위 p10–p90</p>
+                  <p className="mt-1 text-base font-black text-on-surface">
+                    {formatPercent(expectedP10)} ~ {formatPercent(expectedP90)}
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-md grid gap-xs sm:grid-cols-3">
+                <div className="rounded-xl bg-surface/80 px-md py-sm">
+                  <p className="text-[10px] font-bold text-outline">하락 추정 확률</p>
+                  <p className="mt-1 text-lg font-black text-error">
+                    {expectedLossProbability === null
+                      ? "계산 불가"
+                      : `${Math.round(expectedLossProbability * 100)}%`}
+                  </p>
+                </div>
+                <div className="rounded-xl bg-surface/80 px-md py-sm">
+                  <p className="text-[10px] font-bold text-outline">근거 표본</p>
+                  <p className="mt-1 text-lg font-black text-on-surface">
+                    {estimateSampleCount}건
+                  </p>
+                </div>
+                <div className="rounded-xl bg-surface/80 px-md py-sm">
+                  <p className="text-[10px] font-bold text-outline">신뢰도</p>
+                  <p className="mt-1 text-lg font-black text-on-surface">
+                    {estimateConfidence}
+                  </p>
+                </div>
+              </div>
+
+              <p className="mt-md text-[11px] leading-relaxed text-on-surface-variant">
+                {estimateUsesStoredForecast
+                  ? "저장된 유사사건 경험분포 forecast를 사용했습니다."
+                  : "현재 화면의 실제 과거 수익률을 유사도와 원문 출처 수로 가중해 계산했습니다."}
+                {!estimateIsProductionEligible
+                  && " 표본 수가 운영 gate보다 적어 참고용으로만 보이며 자동 리밸런싱에는 반영하지 않습니다."}
+              </p>
+            </div>
+          )}
+        </section>
 
         <button
           type="button"
@@ -637,8 +822,8 @@ function LoadingLayout({
             저장된 Event를 먼저 확인하고 있습니다
           </p>
           <p className="mt-sm w-full break-keep text-sm leading-relaxed text-outline">
-            저장된 사례가 부족한 경우에만 NAVER 유사도순 검색을 진행하고,
-            실제 거래일 가격을 연결합니다.
+            백그라운드에서 검증해 저장한 유사 Event와 실제 거래일 가격을
+            불러옵니다.
           </p>
           <div className="mt-lg flex w-full flex-wrap items-center justify-center gap-xs text-[11px] font-bold text-on-surface-variant">
             <span className="rounded-full bg-surface-container-low px-sm py-xs">
@@ -646,15 +831,15 @@ function LoadingLayout({
             </span>
             <span aria-hidden="true" className="text-outline">→</span>
             <span className="rounded-full bg-surface-container-low px-sm py-xs">
-              필요 시 NAVER 보충
+              저장된 유사 사례
             </span>
             <span aria-hidden="true" className="text-outline">→</span>
             <span className="rounded-full bg-surface-container-low px-sm py-xs">
-              거래일 가격 연결
+              저장 forecast
             </span>
           </div>
           <p className="mt-lg w-full break-keep text-[11px] leading-relaxed text-outline">
-            첫 요청은 잠시 걸릴 수 있으며, 동일 요청은 저장된 결과를 사용합니다.
+            사용자 요청 중에는 무거운 수집·모델 프로세스를 실행하지 않습니다.
           </p>
         </div>
       </main>
@@ -674,8 +859,9 @@ export default function IssueAnalysisModal({
     error: null,
   });
   const [requestVersion, setRequestVersion] = useState(0);
-  const [selectedHorizon, setSelectedHorizon] = useState<HorizonKey>("d1");
+  const [selectedHorizon, setSelectedHorizon] = useState<HorizonKey>("d5");
   const [selectedEventId, setSelectedEventId] = useState("all");
+  const [riskForecast, setRiskForecast] = useState<EventRiskForecast | null>(null);
 
   const loadAnalysis = useCallback(
     async (signal: AbortSignal): Promise<AnalysisState | null> => {
@@ -728,6 +914,29 @@ export default function IssueAnalysisModal({
 
   useEffect(() => {
     if (!isOpen) return;
+    const controller = new AbortController();
+    const loadRisk = async () => {
+      try {
+        const response = await fetch(
+          `/api/events/${encodeURIComponent(issue.eventId)}/risk?horizon=${selectedHorizon}`,
+          { cache: "no-store", signal: controller.signal },
+        );
+        const payload = await response.json() as EventRiskApiResponse;
+        if (!response.ok || !payload.success || !payload.data) {
+          setRiskForecast(null);
+          return;
+        }
+        setRiskForecast(payload.data);
+      } catch {
+        if (!controller.signal.aborted) setRiskForecast(null);
+      }
+    };
+    void loadRisk();
+    return () => controller.abort();
+  }, [isOpen, issue.eventId, selectedHorizon]);
+
+  useEffect(() => {
+    if (!isOpen) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") onClose();
     };
@@ -763,6 +972,7 @@ export default function IssueAnalysisModal({
             setSelectedHorizon={setSelectedHorizon}
             selectedEventId={selectedEventId}
             setSelectedEventId={setSelectedEventId}
+            riskForecast={riskForecast}
             onClose={onClose}
           />
         ) : (

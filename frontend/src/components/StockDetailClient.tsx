@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
+import type { KisRecord } from '@/lib/kisApi';
 
 const StockChart = dynamic(() => import('@/components/StockChart'), { 
   ssr: false, 
@@ -15,10 +16,15 @@ const StockChart = dynamic(() => import('@/components/StockChart'), {
 interface StockDetailClientProps {
   stockCode: string;
   stockName: string;
-  initialPrice: any;
-  initialChart: any;
-  initialInvestor: any;
-  initialOrderbook: any;
+  initialPrice: KisRecord | null;
+  initialChart: KisRecord[] | null;
+  initialInvestor: KisRecord[] | null;
+  initialOrderbook: KisRecord | null;
+}
+
+interface ApiResponse<T> {
+  success: boolean;
+  data?: T;
 }
 
 export default function StockDetailClient({
@@ -29,10 +35,10 @@ export default function StockDetailClient({
   initialInvestor,
   initialOrderbook
 }: StockDetailClientProps) {
-  const [priceData, setPriceData] = useState<any>(initialPrice);
-  const [chartData, setChartData] = useState<any>(initialChart);
-  const [investorData, setInvestorData] = useState<any>(initialInvestor);
-  const [orderbook, setOrderbook] = useState<any>(initialOrderbook);
+  const [priceData, setPriceData] = useState<KisRecord | null>(initialPrice);
+  const [chartData, setChartData] = useState<KisRecord[] | null>(initialChart);
+  const [investorData, setInvestorData] = useState<KisRecord[] | null>(initialInvestor);
+  const [orderbook, setOrderbook] = useState<KisRecord | null>(initialOrderbook);
   
   const [chartPeriod, setChartPeriod] = useState<'D' | 'W' | 'M' | 'Y'>('D');
   const [isChartLoading, setIsChartLoading] = useState(false);
@@ -47,7 +53,7 @@ export default function StockDetailClient({
       try {
         const res = await fetch(`/api/stock/chart/${stockCode}?period=${chartPeriod}`);
         if (res.ok) {
-          const data = await res.json();
+          const data = await res.json() as ApiResponse<KisRecord[]>;
           if (data.success && data.data && data.data.length > 0) {
             if (!isCancelled) {
               setChartData(data.data);
@@ -86,17 +92,17 @@ export default function StockDetailClient({
         ]);
         
         if (priceRes.ok) {
-          const pData = await priceRes.json();
+          const pData = await priceRes.json() as ApiResponse<KisRecord>;
           if (pData.success && pData.data) setPriceData(pData.data);
         }
         
         if (obRes.ok) {
-          const oData = await obRes.json();
+          const oData = await obRes.json() as ApiResponse<KisRecord>;
           if (oData.success && oData.data) setOrderbook(oData.data);
         }
 
         if (invRes.ok) {
-          const iData = await invRes.json();
+          const iData = await invRes.json() as ApiResponse<KisRecord[]>;
           if (iData.success && iData.data) setInvestorData(iData.data);
         }
       } catch (e) {
@@ -132,11 +138,6 @@ export default function StockDetailClient({
     return 'text-gray-500';
   };
   
-  const getInvestorColor = (valStr: string | undefined) => {
-    if (!valStr || valStr === '0') return 'bg-gray-300 text-gray-500';
-    return parseInt(valStr, 10) > 0 ? 'bg-chart-up text-chart-up' : 'bg-chart-down text-chart-down';
-  };
-
   // Extract variables
   const currentPrice = priceData ? parseInt(priceData.stck_prpr, 10) : 0;
   const changeValue = priceData ? priceData.prdy_vrss : '0';
@@ -153,7 +154,7 @@ export default function StockDetailClient({
   // Extract investor data: find the most recent trading day with non-empty investor net buy quantity
   const validInvestorItem = Array.isArray(investorData)
     ? investorData.find(
-        (item: any) =>
+        (item) =>
           item &&
           item.prsn_ntby_qty !== undefined &&
           item.prsn_ntby_qty !== null &&
@@ -191,8 +192,8 @@ export default function StockDetailClient({
   const htsLink = "https://securities.koreainvestment.com/main/Main.jsp";
 
   // Build orderbook arrays (5 levels for MVP UI)
-  const asks = [];
-  const bids = [];
+  const asks: Array<{ price?: string; vol?: string }> = [];
+  const bids: Array<{ price?: string; vol?: string }> = [];
   if (orderbook) {
     for (let i = 5; i >= 1; i--) {
       asks.push({
@@ -229,12 +230,12 @@ export default function StockDetailClient({
         {/* Quick Metrics Grid */}
         <div className="flex-1 grid grid-cols-4 gap-4 px-6 border-l border-gray-100">
           <div className="flex flex-col justify-center">
-            <div className="flex justify-between text-[10px] text-gray-400"><span className="">1일 범위</span> <span className="">{formatNum(dayHigh)}원</span></div>
+            <div className="flex justify-between text-[10px] text-gray-400"><span>1일 범위</span> <span>{formatNum(dayLow)}~{formatNum(dayHigh)}원</span></div>
             <div className="w-full h-1 bg-gray-100 rounded-full my-1 relative">
               <div className="absolute h-full bg-green-500 rounded-full left-[20%] right-[20%]"></div>
               <div className="absolute w-2 h-2 bg-green-600 rounded-full -top-0.5 left-[50%] border border-white"></div>
             </div>
-            <div className="flex justify-between text-[10px] text-gray-400"><span className="">52주 범위</span> <span className="">{formatNum(high52w)}원</span></div>
+            <div className="flex justify-between text-[10px] text-gray-400"><span>52주 범위</span> <span>{formatNum(low52w)}~{formatNum(high52w)}원</span></div>
           </div>
           <div className="flex flex-col justify-center text-[11px] leading-relaxed">
             <div className="flex justify-between">

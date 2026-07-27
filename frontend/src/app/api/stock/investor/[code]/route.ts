@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getStockInvestorData } from '@/lib/kisApi';
+import { errorMessage } from '@/lib/errors';
 
 export async function GET(
   request: NextRequest,
@@ -9,9 +10,9 @@ export async function GET(
     const { code } = await params;
     const data = await getStockInvestorData(code);
     return NextResponse.json({ success: true, data });
-  } catch (error: any) {
+  } catch (error: unknown) {
     return NextResponse.json(
-      { success: false, message: error.message },
+      { success: false, message: errorMessage(error, 'Failed to fetch investor data') },
       { status: 500 }
     );
   }

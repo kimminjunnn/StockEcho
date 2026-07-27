@@ -2,9 +2,10 @@
 
 import React, { useEffect, useRef } from 'react';
 import { createChart, ColorType, IChartApi, ISeriesApi, Time, CandlestickSeries } from 'lightweight-charts';
+import type { KisRecord } from '@/lib/kisApi';
 
 interface StockChartProps {
-  data: any[]; // Data from KIS output2 array
+  data: KisRecord[];
   currentPrice?: number;
   period?: 'min' | 'D' | 'W' | 'M' | 'Y';
 }
@@ -31,7 +32,7 @@ export default function StockChart({ data, currentPrice, period = 'min' }: Stock
         timeVisible: period === 'min',
         secondsVisible: false,
         borderVisible: false,
-        tickMarkFormatter: (time: any, tickMarkType: number) => {
+        tickMarkFormatter: (time: Time, tickMarkType: number) => {
           if (typeof time === 'number') {
             const date = new Date(time * 1000);
             if (tickMarkType === 3 || tickMarkType === 4) {
@@ -84,7 +85,7 @@ export default function StockChart({ data, currentPrice, period = 'min' }: Stock
 
     // Format data
     const isMinute = period === 'min';
-    const formattedData = [...data].reverse().map((item: any) => {
+    const formattedData = [...data].reverse().map((item) => {
       let timestamp: Time;
       
       if (isMinute) {

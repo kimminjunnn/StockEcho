@@ -11,6 +11,15 @@ export interface Holding {
 
 export const HOLDINGS_STORAGE_KEY = "stockecho.holdings.v2";
 
+const DEFAULT_HOLDING_CODES = new Set([
+  "005930",
+  "000660",
+  "042700",
+  "005380",
+  "035420",
+  "035720",
+]);
+
 export function parseStoredHoldings(value: string | null): Holding[] | null {
   if (!value) return null;
   try {
@@ -36,7 +45,16 @@ export function parseStoredHoldings(value: string | null): Holding[] | null {
       changeRate: typeof holding.changeRate === "number" ? holding.changeRate : undefined,
       riskLevel: holding.riskLevel ?? "pending",
     }));
-    return holdings.length > 0 ? holdings : null;
+    if (holdings.length === 0) return null;
+    const isLegacyDefaultPortfolio = (
+      holdings.length >= 5
+      && holdings.every(
+        (holding) => holding.quantity === 1 && DEFAULT_HOLDING_CODES.has(holding.code),
+      )
+    );
+    return isLegacyDefaultPortfolio
+      ? holdings.map((holding) => ({ ...holding, quantity: 10 }))
+      : holdings;
   } catch {
     return null;
   }
@@ -46,37 +64,37 @@ export const INITIAL_HOLDINGS: Holding[] = [
   {
     code: "005930",
     name: "삼성전자",
-    quantity: 1,
+    quantity: 10,
     riskLevel: "pending",
   },
   {
     code: "000660",
     name: "SK하이닉스",
-    quantity: 1,
+    quantity: 10,
     riskLevel: "pending",
   },
   {
     code: "042700",
     name: "한미반도체",
-    quantity: 1,
+    quantity: 10,
     riskLevel: "pending",
   },
   {
     code: "005380",
     name: "현대차",
-    quantity: 1,
+    quantity: 10,
     riskLevel: "pending",
   },
   {
     code: "035420",
     name: "네이버",
-    quantity: 1,
+    quantity: 10,
     riskLevel: "pending",
   },
   {
     code: "035720",
     name: "카카오",
-    quantity: 1,
+    quantity: 10,
     riskLevel: "pending",
   },
 ];
