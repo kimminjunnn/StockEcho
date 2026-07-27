@@ -1,0 +1,11 @@
+{
+  "phases": [
+    { "dir": "0-contract-quality", "status": "completed" },
+    { "dir": "1-event-study-dataset", "status": "completed" },
+    { "dir": "2-esg-similarity", "status": "completed" },
+    { "dir": "3-risk-forecast", "status": "completed" },
+    { "dir": "4-portfolio-optimizer", "status": "completed" },
+    { "dir": "5-product-integration", "status": "completed" },
+    { "dir": "6-research-release", "status": "completed" }
+  ]
+}

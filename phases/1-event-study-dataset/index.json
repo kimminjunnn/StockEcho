@@ -1,0 +1,7 @@
+{
+  "project": "StockEcho",
+  "phase": "1-event-study-dataset",
+  "steps": [
+    { "step": 0, "name": "build-leakage-safe-event-study-dataset", "status": "completed" }
+  ]
+}

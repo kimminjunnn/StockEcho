@@ -1,0 +1,7 @@
+{
+  "project": "StockEcho",
+  "phase": "6-research-release",
+  "steps": [
+    { "step": 0, "name": "validate-document-and-release", "status": "completed" }
+  ]
+}

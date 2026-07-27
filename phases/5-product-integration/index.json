@@ -1,0 +1,7 @@
+{
+  "project": "StockEcho",
+  "phase": "5-product-integration",
+  "steps": [
+    { "step": 0, "name": "connect-stored-analysis-to-real-ui", "status": "completed" }
+  ]
+}

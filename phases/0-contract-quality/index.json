@@ -1,0 +1,7 @@
+{
+  "project": "StockEcho",
+  "phase": "0-contract-quality",
+  "steps": [
+    { "step": 0, "name": "freeze-contract-and-remove-false-signals", "status": "completed" }
+  ]
+}

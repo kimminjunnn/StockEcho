@@ -1,0 +1,7 @@
+{
+  "project": "StockEcho",
+  "phase": "4-portfolio-optimizer",
+  "steps": [
+    { "step": 0, "name": "build-impact-engine-and-efficient-frontier", "status": "completed" }
+  ]
+}

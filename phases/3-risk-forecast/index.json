@@ -1,0 +1,7 @@
+{
+  "project": "StockEcho",
+  "phase": "3-risk-forecast",
+  "steps": [
+    { "step": 0, "name": "train-calibrate-and-gate-risk-models", "status": "completed" }
+  ]
+}

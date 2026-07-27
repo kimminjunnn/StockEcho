@@ -68,7 +68,7 @@ Route Handler는 `.venv`, `venv`의 macOS·Linux·Windows 실행 경로를 자�
 확인합니다. 다른 Python을 사용하면 서버 전용 `STOCKECHO_PYTHON`에 실행 파일
 경로를 지정하고, 별도 실행 디렉터리에서는 `STOCKECHO_REPOSITORY_ROOT`에 저장소
 루트를 지정합니다. 화면은 실제 대표 기사,
-출처 수, 유사 근거와 D+1·D+5·D+15·D+30 거래일 수익률을 표시하며 부족한
+출처 수, 유사 근거와 D+1·D+5·D+20 거래일 수익률을 표시하며 부족한
 사례나 가격을 임의로 채우지 않습니다.
 
 ## 기술 스택

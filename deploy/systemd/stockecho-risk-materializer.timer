@@ -1,0 +1,11 @@
+[Unit]
+Description=Refresh StockEcho event risk forecasts hourly
+
+[Timer]
+OnCalendar=*-*-* *:40:00
+RandomizedDelaySec=120
+Persistent=true
+Unit=stockecho-risk-materializer.service
+
+[Install]
+WantedBy=timers.target

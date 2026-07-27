@@ -1,0 +1,7 @@
+{
+  "project": "StockEcho",
+  "phase": "2-esg-similarity",
+  "steps": [
+    { "step": 0, "name": "evaluate-esg-taxonomy-and-event-retrieval", "status": "completed" }
+  ]
+}

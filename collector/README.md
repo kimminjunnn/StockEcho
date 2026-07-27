@@ -140,8 +140,16 @@ corpus가 갱신되기 전까지 NAVER를 다시 호출하지 않는다.
   --keyword "핵심 키프레이즈"
 ```
 
+최신 주요 이슈가 갱신된 뒤 Event ID와 저장 분석이 어긋나지 않도록 지원 종목의
+현재 카드 전체를 선계산한다. 이미 현재 schema로 준비된 Event는 건너뛴다.
+
+```bash
+.venv/bin/python -m collector.jobs.sync_current_issue_analyses --all-supported
+.venv/bin/python -m collector.jobs.materialize_risk_forecasts
+```
+
 과거 Event별 가격은 KIS 일봉을 `market_daily`에 캐시한 뒤 Event 기준 거래일
-종가와 다음 1·5·15·30번째 거래일 종가로 계산한다. 장 마감 후·휴일·시각
+종가와 다음 1·5·20번째 거래일 종가로 계산한다. 장 마감 후·휴일·시각
 불확실 보도는 다음 거래일을 기준으로 하며, 거래일이 아직 도달하지 않았거나
 가격이 누락되면 해당 구간을 `partial` 또는 `unavailable`로 반환한다.
 
