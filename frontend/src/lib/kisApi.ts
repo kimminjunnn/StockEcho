@@ -21,7 +21,7 @@ function getEnv(key: string) {
     
     const match = envFile.match(new RegExp(`^${key}=(.*)$`, 'm'));
     return match ? match[1].trim() : undefined;
-  } catch (e) {
+  } catch {
     return undefined;
   }
 }
@@ -36,16 +36,9 @@ const DOMAIN = KIS_ENV === 'real'
 
 let cachedToken = '';
 let tokenExpiration = 0;
+let tokenRequest: Promise<string> | null = null;
 
-export async function getAccessToken() {
-  if (!APP_KEY || !APP_SECRET) {
-    throw new Error('API 키 또는 시크릿이 설정되지 않았습니다.');
-  }
-
-  if (cachedToken && Date.now() < tokenExpiration) {
-    return cachedToken;
-  }
-
+async function issueAccessToken() {
   const res = await fetch(`${DOMAIN}/oauth2/tokenP`, {
     method: 'POST',
     headers: {
@@ -70,6 +63,27 @@ export async function getAccessToken() {
   tokenExpiration = Date.now() + 12 * 60 * 60 * 1000; 
 
   return cachedToken;
+}
+
+export async function getAccessToken() {
+  if (!APP_KEY || !APP_SECRET) {
+    throw new Error('API 키 또는 시크릿이 설정되지 않았습니다.');
+  }
+
+  if (cachedToken && Date.now() < tokenExpiration) {
+    return cachedToken;
+  }
+
+  if (tokenRequest) {
+    return tokenRequest;
+  }
+
+  tokenRequest = issueAccessToken();
+  try {
+    return await tokenRequest;
+  } finally {
+    tokenRequest = null;
+  }
 }
 
 export async function getStockPrice(stockCode: string) {

@@ -11,6 +11,25 @@ import type { StockIssuesApiResponse, StockIssuesState } from '@/lib/issues';
 import { HOLDINGS_STORAGE_KEY, INITIAL_HOLDINGS, parseStoredHoldings, type Holding } from '@/lib/portfolio';
 
 const ALLOCATION_COLORS = ['#0059b9', '#2d6fe5', '#acc7ff'];
+const MARKET_DATA_REFRESH_INTERVAL_MS = 30_000;
+const MARKET_DATA_REQUEST_INTERVAL_MS = 1_100;
+
+function waitForMarketDataSlot(ms: number, signal: AbortSignal) {
+  return new Promise<void>((resolve) => {
+    if (signal.aborted) {
+      resolve();
+      return;
+    }
+
+    const finish = () => {
+      window.clearTimeout(timeoutId);
+      signal.removeEventListener('abort', finish);
+      resolve();
+    };
+    const timeoutId = window.setTimeout(finish, ms);
+    signal.addEventListener('abort', finish, { once: true });
+  });
+}
 
 function analysisPresentation(state: StockIssuesState | undefined, isDomestic: boolean) {
   if (!isDomestic) {
@@ -75,10 +94,6 @@ export default function HomePage() {
     .filter((holding) => /^\d{6}$/.test(holding.code))
     .map((holding) => holding.code)
     .join(',');
-  const missingMarketCodes = holdings
-    .filter((holding) => /^\d{6}$/.test(holding.code) && holding.changeRate === undefined)
-    .map((holding) => holding.code)
-    .join(',');
 
   useEffect(() => {
     let active = true;
@@ -99,41 +114,79 @@ export default function HomePage() {
   }, [holdings, storageReady]);
 
   useEffect(() => {
-    if (!missingMarketCodes) return;
+    if (!storageReady || !marketCodes) return;
 
     const abortController = new AbortController();
+    let refreshInFlight = false;
 
     const refreshMarketData = async () => {
+      if (refreshInFlight) return;
+      refreshInFlight = true;
       const updates = new Map<string, { currentPrice: number; changeRate: number }>();
 
-      // KIS token issuance is rate-limited, so request holdings sequentially.
-      for (const code of missingMarketCodes.split(',')) {
-        try {
-          const response = await fetch(`/api/stock/price/${code}`, { signal: abortController.signal });
-          if (!response.ok) continue;
+      try {
+        const codes = marketCodes.split(',');
 
-          const result = await response.json();
-          const currentPrice = Number(result.data?.stck_prpr);
-          const changeRate = Number(result.data?.prdy_ctrt);
-          if (result.success && Number.isFinite(currentPrice) && Number.isFinite(changeRate)) {
-            updates.set(code, { currentPrice, changeRate });
+        // Paper trading allows one REST request per second, so pace each quote.
+        for (const [index, code] of codes.entries()) {
+          try {
+            const response = await fetch(`/api/stock/price/${code}`, {
+              cache: 'no-store',
+              signal: abortController.signal,
+            });
+
+            if (response.ok) {
+              const result = await response.json();
+              const currentPrice = Number(result.data?.stck_prpr);
+              const changeRate = Number(result.data?.prdy_ctrt);
+              if (result.success && Number.isFinite(currentPrice) && Number.isFinite(changeRate)) {
+                updates.set(code, { currentPrice, changeRate });
+              }
+            }
+          } catch (error) {
+            if (abortController.signal.aborted) return;
+            console.error(`Failed to refresh market data for ${code}:`, error);
           }
-        } catch (error) {
-          if (abortController.signal.aborted) return;
-          console.error(`Failed to refresh market data for ${code}:`, error);
-        }
-      }
 
-      if (abortController.signal.aborted || updates.size === 0) return;
-      setHoldings((currentHoldings) => currentHoldings.map((holding) => {
-        const update = updates.get(holding.code);
-        return update ? { ...holding, ...update } : holding;
-      }));
+          if (index < codes.length - 1) {
+            await waitForMarketDataSlot(
+              MARKET_DATA_REQUEST_INTERVAL_MS,
+              abortController.signal,
+            );
+          }
+        }
+
+        if (abortController.signal.aborted || updates.size === 0) return;
+        setHoldings((currentHoldings) => currentHoldings.map((holding) => {
+          const update = updates.get(holding.code);
+          return update ? { ...holding, ...update } : holding;
+        }));
+      } finally {
+        refreshInFlight = false;
+      }
     };
 
-    refreshMarketData();
-    return () => abortController.abort();
-  }, [missingMarketCodes]);
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === 'visible') {
+        void refreshMarketData();
+      }
+    };
+
+    void refreshMarketData();
+    const intervalId = window.setInterval(
+      refreshMarketData,
+      MARKET_DATA_REFRESH_INTERVAL_MS,
+    );
+    document.addEventListener('visibilitychange', refreshWhenVisible);
+    window.addEventListener('focus', refreshWhenVisible);
+
+    return () => {
+      abortController.abort();
+      window.clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', refreshWhenVisible);
+      window.removeEventListener('focus', refreshWhenVisible);
+    };
+  }, [marketCodes, storageReady]);
 
   useEffect(() => {
     if (!marketCodes) return;
