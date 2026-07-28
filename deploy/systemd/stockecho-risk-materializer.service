@@ -11,13 +11,13 @@ WorkingDirectory=/opt/stockecho/app
 Environment=HOME=/home/ubuntu
 Environment=PYTHONUNBUFFERED=1
 UMask=0077
-ExecStart=-/opt/stockecho/venv/bin/python -m collector.jobs.sync_current_issue_analyses --all-supported
+ExecStart=/opt/stockecho/venv/bin/python -m collector.jobs.sync_current_issue_analyses --all-supported
 ExecStart=/usr/bin/flock -n /run/lock/stockecho-risk-materializer.lock /opt/stockecho/venv/bin/python -m collector.jobs.materialize_risk_forecasts
 Nice=10
 CPUWeight=20
 MemoryHigh=400M
 MemoryMax=600M
-TimeoutStartSec=30min
+TimeoutStartSec=55min
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=full

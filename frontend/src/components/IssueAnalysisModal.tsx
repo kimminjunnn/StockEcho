@@ -819,11 +819,11 @@ function LoadingLayout({
             className="h-12 w-12 shrink-0 animate-spin rounded-full border-4 border-primary-fixed border-t-primary"
           />
           <p className="mt-lg w-full break-keep text-lg font-black text-on-surface">
-            저장된 Event를 먼저 확인하고 있습니다
+            과거 유사 사례를 확인하고 있습니다
           </p>
           <p className="mt-sm w-full break-keep text-sm leading-relaxed text-outline">
-            백그라운드에서 검증해 저장한 유사 Event와 실제 거래일 가격을
-            불러옵니다.
+            저장된 분석이 없으면 과거 뉴스를 검색하고 실제 거래일 가격 반응을
+            계산합니다.
           </p>
           <div className="mt-lg flex w-full flex-wrap items-center justify-center gap-xs text-[11px] font-bold text-on-surface-variant">
             <span className="rounded-full bg-surface-container-low px-sm py-xs">
@@ -839,7 +839,7 @@ function LoadingLayout({
             </span>
           </div>
           <p className="mt-lg w-full break-keep text-[11px] leading-relaxed text-outline">
-            사용자 요청 중에는 무거운 수집·모델 프로세스를 실행하지 않습니다.
+            첫 분석은 뉴스 검색 때문에 최대 2~3분 정도 걸릴 수 있습니다.
           </p>
         </div>
       </main>

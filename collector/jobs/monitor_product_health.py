@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 
 from psycopg.rows import dict_row
 
+from collector.historical_events.service import SCHEMA_VERSION
 from collector.repositories.supabase import connect
 
 
@@ -64,7 +65,7 @@ def health_snapshot() -> dict[str, object]:
                          current_event_id, result
                   from public.historical_issue_analyses
                   where status = 'ready'
-                    and result->>'schemaVersion' = 'historical-issue-analysis-v8'
+                    and result->>'schemaVersion' = %s
                   order by current_event_id, updated_at desc
                 ),
                 latest_d5_forecast as (
@@ -97,7 +98,8 @@ def health_snapshot() -> dict[str, object]:
                   on analysis.current_event_id = issue.event_id
                 left join latest_d5_forecast forecast
                   on forecast.event_id = issue.event_id
-                """
+                """,
+                (SCHEMA_VERSION,),
             )
             current_issues = dict(cursor.fetchone())
     for payload in (forecasts, analyses):

@@ -2,10 +2,17 @@ import type {
   HistoricalIssueApiResponse,
   HistoricalIssueRequestBody,
 } from "@/lib/historicalIssues";
+import {
+  CollectorExecutionError,
+  CollectorRuntimeUnavailableError,
+  runHistoricalIssueAnalysis,
+} from "@/lib/historicalIssueCollector";
 import { getStoredHistoricalIssueAnalysis } from "@/lib/historicalIssueRepository";
 import { getStockIssues } from "@/lib/issueRepository";
 
 export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+export const maxDuration = 180;
 
 function isRequestBody(value: unknown): value is HistoricalIssueRequestBody {
   if (!value || typeof value !== "object") return false;
@@ -63,32 +70,51 @@ export async function POST(
       );
     }
     const data = await getStoredHistoricalIssueAnalysis(stockCode, body.eventId);
-    if (!data) {
-      console.info("[historical-issues] Analysis not ready.", {
+    if (data) {
+      console.info("[historical-issues] Analysis loaded.", {
         stockCode,
         eventId: body.eventId,
+        schemaVersion: data.schemaVersion,
+        evidenceEventCount: data.events.length,
+        completeness: data.completeness,
       });
+      return Response.json(
+        { success: true, data: { ...data, cacheHit: true } } satisfies HistoricalIssueApiResponse,
+        { headers: { "Cache-Control": "no-store" } },
+      );
+    }
+
+    console.info("[historical-issues] Stored analysis missing; starting analysis.", {
+      stockCode,
+      eventId: body.eventId,
+    });
+    const payload = await runHistoricalIssueAnalysis(stockCode, canonicalIssue);
+    return Response.json(payload, {
+      headers: { "Cache-Control": "no-store" },
+    });
+  } catch (error) {
+    if (error instanceof CollectorRuntimeUnavailableError) {
       return Response.json(
         {
           success: false,
-          errorCode: "analysis_not_ready",
-          error: "저장된 과거 유사 이슈 분석이 아직 없습니다.",
+          errorCode: "collector_runtime_unavailable",
+          error: "과거 뉴스 검색 서버가 준비되지 않았습니다.",
         } satisfies HistoricalIssueApiResponse,
-        { status: 404 },
+        { status: 503 },
       );
     }
-    console.info("[historical-issues] Analysis loaded.", {
-      stockCode,
-      eventId: body.eventId,
-      schemaVersion: data.schemaVersion,
-      evidenceEventCount: data.events.length,
-      completeness: data.completeness,
-    });
-    return Response.json(
-      { success: true, data: { ...data, cacheHit: true } } satisfies HistoricalIssueApiResponse,
-      { headers: { "Cache-Control": "no-store" } },
-    );
-  } catch (error) {
+    if (error instanceof CollectorExecutionError) {
+      return Response.json(
+        {
+          success: false,
+          errorCode: error.errorCode,
+          error: error.timedOut
+            ? "과거 뉴스 검색 시간이 초과되었습니다. 잠시 후 다시 시도해 주세요."
+            : "과거 유사 이슈 분석을 완료하지 못했습니다. 잠시 후 다시 시도해 주세요.",
+        } satisfies HistoricalIssueApiResponse,
+        { status: error.timedOut ? 504 : 500 },
+      );
+    }
     console.error("[historical-issues] Stored result lookup failed.", {
       stockCode,
       errorName: error instanceof Error ? error.name : "unknown",

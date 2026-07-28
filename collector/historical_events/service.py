@@ -33,7 +33,7 @@ from collector.topic_modeling.issue_classifier import (
 )
 
 
-SCHEMA_VERSION = "historical-issue-analysis-v8"
+SCHEMA_VERSION = "historical-issue-analysis-v9"
 RESULT_LIMIT = 4
 OTHER_COMPANY_RESULT_LIMIT = 3
 MINIMUM_SOURCES = 2

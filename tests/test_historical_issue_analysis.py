@@ -36,14 +36,43 @@ class HistoricalIssueKeywordTests(unittest.TestCase):
         self.assertNotIn("삼성전자", keywords)
         self.assertNotIn("공개", keywords)
 
-    def test_uses_first_representative_keyphrase_for_naver_query(self) -> None:
+    def test_prioritizes_repeated_event_terms_across_keyphrases(self) -> None:
         search_keywords = extract_search_keywords(
             keywords=["성과급 협상", "성과급 갈등 점화", "노사 임단협"],
             core_keywords=["성과급", "재협상", "갈등", "노사"],
             company_name="SK하이닉스",
         )
 
-        self.assertEqual(search_keywords, ["성과급", "협상"])
+        self.assertEqual(search_keywords, ["성과급", "노사", "협상"])
+
+    def test_removes_spaced_company_name_parts_from_search(self) -> None:
+        search_keywords = extract_search_keywords(
+            keywords=[
+                "한화 에어로스페이스 달러",
+                "공모 채권 발행",
+                "해외 공모",
+                "한화 채권 증자",
+            ],
+            core_keywords=["발행", "방산", "공모", "채권"],
+            company_name="한화에어로스페이스",
+        )
+
+        self.assertEqual(search_keywords, ["공모", "채권", "발행"])
+        self.assertNotIn("한화", search_keywords)
+        self.assertNotIn("에어로스페이스", search_keywords)
+
+    def test_avoids_duplicate_word_stems_in_search_terms(self) -> None:
+        search_keywords = extract_search_keywords(
+            keywords=[
+                "치료제 트룩시마 개월",
+                "트룩시마 시장 점유",
+                "치료제 트룩시마",
+            ],
+            core_keywords=["트룩시마", "점유율", "치료제", "개월"],
+            company_name="셀트리온",
+        )
+
+        self.assertEqual(search_keywords, ["치료제", "점유율", "트룩시마"])
 
 
 class TradingDayReturnTests(unittest.TestCase):
