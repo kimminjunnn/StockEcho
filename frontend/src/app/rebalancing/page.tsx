@@ -37,6 +37,35 @@ function signedPercentagePoint(value: number | undefined): string {
   return `${points > 0 ? "+" : ""}${points.toFixed(1)}%p`;
 }
 
+function quantityAction(value: number | undefined) {
+  const quantity = value ?? 0;
+  if (quantity > 0) {
+    return {
+      label: "매수",
+      quantity,
+      cardClassName: "border-red-100 bg-red-50/60",
+      badgeClassName: "bg-red-100 text-chart-up",
+      quantityClassName: "text-chart-up",
+    };
+  }
+  if (quantity < 0) {
+    return {
+      label: "매도",
+      quantity: Math.abs(quantity),
+      cardClassName: "border-blue-100 bg-blue-50/60",
+      badgeClassName: "bg-blue-100 text-chart-down",
+      quantityClassName: "text-chart-down",
+    };
+  }
+  return {
+    label: "유지",
+    quantity: 0,
+    cardClassName: "border-gray-200 bg-gray-50",
+    badgeClassName: "bg-gray-200 text-gray-600",
+    quantityClassName: "text-gray-700",
+  };
+}
+
 export default function RebalancingPage() {
   const [holdings, setHoldings] = useState<PortfolioHoldingInput[]>([]);
   const [storageReady, setStorageReady] = useState(false);
@@ -167,6 +196,19 @@ export default function RebalancingPage() {
       current: result.portfolioLossProbabilityScore,
       target,
     };
+  }, [result]);
+  const tradeCounts = useMemo(() => {
+    if (!result) return { buy: 0, sell: 0, hold: 0 };
+    return result.positions.reduce(
+      (counts, position) => {
+        const change = position.estimatedQuantityChange ?? 0;
+        if (change > 0) counts.buy += 1;
+        else if (change < 0) counts.sell += 1;
+        else counts.hold += 1;
+        return counts;
+      },
+      { buy: 0, sell: 0, hold: 0 },
+    );
   }, [result]);
 
   return (
@@ -335,6 +377,75 @@ export default function RebalancingPage() {
             </div>
           )}
 
+          <section className="mb-8 overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
+            <div className="flex flex-col justify-between gap-4 border-b border-gray-100 px-7 py-6 sm:flex-row sm:items-center">
+              <div>
+                <p className="text-xs font-bold text-primary">계산상 주문 수량</p>
+                <h2 className="mt-1 text-2xl font-black text-gray-900">
+                  그래서, 몇 주를 사고팔면 되나요?
+                </h2>
+                <p className="mt-2 text-sm text-gray-500">
+                  현재가와 목표 비중을 기준으로 가장 가까운 정수 주수로 계산했습니다.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2 text-xs font-bold">
+                <span className="rounded-full bg-red-50 px-3 py-2 text-chart-up">
+                  매수 {tradeCounts.buy}종목
+                </span>
+                <span className="rounded-full bg-blue-50 px-3 py-2 text-chart-down">
+                  매도 {tradeCounts.sell}종목
+                </span>
+                {tradeCounts.hold > 0 && (
+                  <span className="rounded-full bg-gray-100 px-3 py-2 text-gray-600">
+                    유지 {tradeCounts.hold}종목
+                  </span>
+                )}
+              </div>
+            </div>
+            <div className="grid gap-4 p-5 sm:grid-cols-2 xl:grid-cols-3">
+              {result.positions.map((position) => {
+                const action = quantityAction(position.estimatedQuantityChange);
+                const targetQuantity = position.quantity
+                  + (position.estimatedQuantityChange ?? 0);
+                return (
+                  <article
+                    key={position.code}
+                    className={`rounded-2xl border p-5 ${action.cardClassName}`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <Link
+                          href={`/stock/${position.code}`}
+                          className="block truncate font-bold text-gray-900 hover:text-primary"
+                        >
+                          {position.name}
+                        </Link>
+                        <p className="mt-1 text-xs text-gray-400">{position.code}</p>
+                      </div>
+                      <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-black ${action.badgeClassName}`}>
+                        {action.label}
+                      </span>
+                    </div>
+                    <p className={`mt-5 text-3xl font-black tabular-nums ${action.quantityClassName}`}>
+                      {action.quantity.toLocaleString("ko-KR")}주
+                    </p>
+                    <p className="mt-2 text-sm font-medium text-gray-600">
+                      현재 {position.quantity.toLocaleString("ko-KR")}주
+                      <span className="mx-2 text-gray-300">→</span>
+                      목표 {targetQuantity.toLocaleString("ko-KR")}주
+                    </p>
+                    <p className="mt-3 text-xs text-gray-500">
+                      현재가 {position.currentPrice.toLocaleString("ko-KR")}원 기준
+                    </p>
+                  </article>
+                );
+              })}
+            </div>
+            <p className="border-t border-gray-100 px-7 py-4 text-xs leading-relaxed text-gray-500">
+              실제 주문은 전송되지 않습니다. 세금·수수료·슬리피지와 장중 가격 변동에 따라 실제 필요 수량은 달라질 수 있습니다.
+            </p>
+          </section>
+
           <section className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
             <div className="flex flex-col justify-between gap-3 border-b border-gray-100 px-7 py-5 sm:flex-row sm:items-center">
               <div>
@@ -347,7 +458,7 @@ export default function RebalancingPage() {
                 onClick={() => setIsModalOpen(true)}
                 className="rounded-xl bg-primary px-5 py-3 text-sm font-bold text-white disabled:cursor-not-allowed disabled:bg-gray-300"
               >
-                계산상 수량 보기
+                표로 자세히 보기
               </button>
             </div>
             <div className="overflow-x-auto">
