@@ -1,7 +1,4 @@
-import {
-  areSupportedStockCodes,
-  getLatestStoredPrices,
-} from "@/lib/riskRepository";
+import { getLatestStoredPrices } from "@/lib/riskRepository";
 
 export const dynamic = "force-dynamic";
 
@@ -22,12 +19,9 @@ export async function POST(request: Request) {
     || codes.length > 10
     || !codes.every((code) => typeof code === "string" && /^\d{6}$/.test(code))
   ) {
-    return Response.json({ success: false, error: "1~10개 지원 종목 코드가 필요합니다." }, { status: 400 });
+    return Response.json({ success: false, error: "1~10개 국내 종목 코드가 필요합니다." }, { status: 400 });
   }
   const stockCodes = codes as string[];
-  if (!await areSupportedStockCodes(stockCodes)) {
-    return Response.json({ success: false, error: "StockEcho 지원 종목만 조회할 수 있습니다." }, { status: 400 });
-  }
   try {
     return Response.json({
       success: true,

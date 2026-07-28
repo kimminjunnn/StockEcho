@@ -28,6 +28,33 @@ let cachedToken = '';
 let tokenExpiration = 0;
 let tokenRequest: Promise<string> | null = null;
 let cachedConfigKey = '';
+let kisMarketDataQueue = Promise.resolve();
+let nextKisMarketDataRequestAt = 0;
+
+const KIS_MARKET_DATA_REQUEST_INTERVAL_MS = 1_100;
+
+async function fetchKisMarketData(
+  input: string | URL,
+  init: RequestInit,
+): Promise<Response> {
+  const previousRequest = kisMarketDataQueue;
+  let releaseRequest: () => void = () => undefined;
+  kisMarketDataQueue = new Promise<void>((resolve) => {
+    releaseRequest = resolve;
+  });
+
+  await previousRequest;
+  try {
+    const waitMs = Math.max(0, nextKisMarketDataRequestAt - Date.now());
+    if (waitMs > 0) {
+      await new Promise((resolve) => setTimeout(resolve, waitMs));
+    }
+    nextKisMarketDataRequestAt = Date.now() + KIS_MARKET_DATA_REQUEST_INTERVAL_MS;
+    return await fetch(input, init);
+  } finally {
+    releaseRequest();
+  }
+}
 
 async function issueAccessToken(config: KisConfig) {
   const res = await fetch(`${config.domain}/oauth2/tokenP`, {
@@ -86,7 +113,7 @@ export async function getStockPrice(stockCode: string): Promise<KisRecord> {
   const config = getKisConfig();
   const token = await getAccessTokenFor(config);
   
-  const res = await fetch(`${config.domain}/uapi/domestic-stock/v1/quotations/inquire-price?FID_COND_MRKT_DIV_CODE=J&FID_INPUT_ISCD=${stockCode}`, {
+  const res = await fetchKisMarketData(`${config.domain}/uapi/domestic-stock/v1/quotations/inquire-price?FID_COND_MRKT_DIV_CODE=J&FID_INPUT_ISCD=${stockCode}`, {
     method: 'GET',
     headers: {
       'Content-Type': 'application/json; charset=utf-8',
@@ -131,7 +158,7 @@ export async function getStockChartData(
   const endDt = formatDate(today);
   const startDt = formatDate(pastDate);
 
-  const res = await fetch(`${config.domain}/uapi/domestic-stock/v1/quotations/inquire-daily-itemchartprice?FID_COND_MRKT_DIV_CODE=J&FID_INPUT_ISCD=${stockCode}&FID_INPUT_DATE_1=${startDt}&FID_INPUT_DATE_2=${endDt}&FID_PERIOD_DIV_CODE=${period}&FID_ORG_ADJ_PRC=0`, {
+  const res = await fetchKisMarketData(`${config.domain}/uapi/domestic-stock/v1/quotations/inquire-daily-itemchartprice?FID_COND_MRKT_DIV_CODE=J&FID_INPUT_ISCD=${stockCode}&FID_INPUT_DATE_1=${startDt}&FID_INPUT_DATE_2=${endDt}&FID_PERIOD_DIV_CODE=${period}&FID_ORG_ADJ_PRC=0`, {
     method: 'GET',
     headers: {
       'Content-Type': 'application/json; charset=utf-8',
@@ -162,7 +189,7 @@ export async function getStockMinuteChartData(stockCode: string): Promise<KisRec
   // For VTS and after hours, using "153000" (market close) is safer to get the whole day.
   const time = "153000";
 
-  const res = await fetch(`${config.domain}/uapi/domestic-stock/v1/quotations/inquire-time-itemchartprice?FID_ETC_CLS_CODE=&FID_COND_MRKT_DIV_CODE=J&FID_INPUT_ISCD=${stockCode}&FID_INPUT_HOUR_1=${time}&FID_PW_DATA_INCU_YN=N`, {
+  const res = await fetchKisMarketData(`${config.domain}/uapi/domestic-stock/v1/quotations/inquire-time-itemchartprice?FID_ETC_CLS_CODE=&FID_COND_MRKT_DIV_CODE=J&FID_INPUT_ISCD=${stockCode}&FID_INPUT_HOUR_1=${time}&FID_PW_DATA_INCU_YN=N`, {
     method: 'GET',
     headers: {
       'Content-Type': 'application/json; charset=utf-8',
@@ -193,7 +220,7 @@ export async function getPastIssueChartData(
   const config = getKisConfig();
   const token = await getAccessTokenFor(config);
 
-  const res = await fetch(`${config.domain}/uapi/domestic-stock/v1/quotations/inquire-daily-itemchartprice?FID_COND_MRKT_DIV_CODE=J&FID_INPUT_ISCD=${stockCode}&FID_INPUT_DATE_1=${startDate}&FID_INPUT_DATE_2=${endDate}&FID_PERIOD_DIV_CODE=D&FID_ORG_ADJ_PRC=0`, {
+  const res = await fetchKisMarketData(`${config.domain}/uapi/domestic-stock/v1/quotations/inquire-daily-itemchartprice?FID_COND_MRKT_DIV_CODE=J&FID_INPUT_ISCD=${stockCode}&FID_INPUT_DATE_1=${startDate}&FID_INPUT_DATE_2=${endDate}&FID_PERIOD_DIV_CODE=D&FID_ORG_ADJ_PRC=0`, {
     method: 'GET',
     headers: {
       'Content-Type': 'application/json; charset=utf-8',
@@ -220,7 +247,7 @@ export async function getStockInvestorData(stockCode: string): Promise<KisRecord
   const config = getKisConfig();
   const token = await getAccessTokenFor(config);
   
-  const res = await fetch(`${config.domain}/uapi/domestic-stock/v1/quotations/inquire-investor?FID_COND_MRKT_DIV_CODE=J&FID_INPUT_ISCD=${stockCode}`, {
+  const res = await fetchKisMarketData(`${config.domain}/uapi/domestic-stock/v1/quotations/inquire-investor?FID_COND_MRKT_DIV_CODE=J&FID_INPUT_ISCD=${stockCode}`, {
     method: 'GET',
     headers: {
       'Content-Type': 'application/json; charset=utf-8',
@@ -244,7 +271,7 @@ export async function getStockOrderbook(stockCode: string): Promise<KisRecord> {
   const config = getKisConfig();
   const token = await getAccessTokenFor(config);
   
-  const res = await fetch(`${config.domain}/uapi/domestic-stock/v1/quotations/inquire-asking-price-exp-ccn?FID_COND_MRKT_DIV_CODE=J&FID_INPUT_ISCD=${stockCode}`, {
+  const res = await fetchKisMarketData(`${config.domain}/uapi/domestic-stock/v1/quotations/inquire-asking-price-exp-ccn?FID_COND_MRKT_DIV_CODE=J&FID_INPUT_ISCD=${stockCode}`, {
     method: 'GET',
     headers: {
       'Content-Type': 'application/json; charset=utf-8',
@@ -268,7 +295,7 @@ export async function getKospiIndex(): Promise<KisRecord> {
   const config = getKisConfig();
   const token = await getAccessTokenFor(config);
   
-  const res = await fetch(`${config.domain}/uapi/domestic-stock/v1/quotations/inquire-index-price?FID_COND_MRKT_DIV_CODE=U&FID_INPUT_ISCD=0001`, {
+  const res = await fetchKisMarketData(`${config.domain}/uapi/domestic-stock/v1/quotations/inquire-index-price?FID_COND_MRKT_DIV_CODE=U&FID_INPUT_ISCD=0001`, {
     method: 'GET',
     headers: {
       'Content-Type': 'application/json; charset=utf-8',

@@ -47,7 +47,10 @@ function analysisPresentation(state: StockIssuesState | undefined, isDomestic: b
 }
 
 function formatCurrentPrice(holding: Holding) {
-  const price = holding.currentPrice || 0;
+  const price = holding.currentPrice;
+  if (price === undefined || !Number.isFinite(price) || price <= 0) {
+    return '조회 중';
+  }
   if (holding.code.endsWith('.T')) {
     return `${price.toLocaleString('ko-KR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} JPY`;
   }
@@ -99,7 +102,14 @@ export default function HomePage() {
     Promise.resolve().then(() => {
       if (!active) return;
       const stored = parseStoredHoldings(window.localStorage.getItem(HOLDINGS_STORAGE_KEY));
-      if (stored) setHoldings(stored);
+      if (stored) {
+        setHoldings(stored.map((holding) => ({
+          code: holding.code,
+          name: holding.name,
+          quantity: holding.quantity,
+          riskLevel: holding.riskLevel,
+        })));
+      }
       setStorageReady(true);
     });
     return () => {
@@ -141,39 +151,6 @@ export default function HomePage() {
 
       try {
         const codes = marketCodes.split(',');
-        try {
-          const storedResponse = await fetch('/api/portfolio/prices', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ codes }),
-            cache: 'no-store',
-            signal: abortController.signal,
-          });
-          const storedPayload = await storedResponse.json() as {
-            success?: boolean;
-            data?: Record<string, {
-              price: number;
-              changeRate: number | null;
-            }>;
-          };
-          if (storedResponse.ok && storedPayload.success) {
-            Object.entries(storedPayload.data ?? {}).forEach(([code, value]) => {
-              if (Number.isFinite(value.price) && value.price > 0) {
-                updates.set(code, {
-                  currentPrice: value.price,
-                  changeRate: value.changeRate ?? undefined,
-                });
-              }
-            });
-            applyUpdates();
-          }
-        } catch (error) {
-          if (abortController.signal.aborted) return;
-          console.warn('Stored market price fallback failed.', {
-            errorName: error instanceof Error ? error.name : 'unknown',
-          });
-        }
-
         // Paper trading allows one REST request per second, so pace each quote.
         for (const [index, code] of codes.entries()) {
           try {
@@ -185,9 +162,18 @@ export default function HomePage() {
             if (response.ok) {
               const result = await response.json();
               const currentPrice = Number(result.data?.stck_prpr);
-              const changeRate = Number(result.data?.prdy_ctrt);
-              if (result.success && Number.isFinite(currentPrice) && Number.isFinite(changeRate)) {
-                updates.set(code, { currentPrice, changeRate });
+              const rawChangeRate = result.data?.prdy_ctrt;
+              const changeRate = (
+                typeof rawChangeRate === 'string' && rawChangeRate.trim() !== ''
+                  ? Number(rawChangeRate)
+                  : undefined
+              );
+              if (result.success && Number.isFinite(currentPrice) && currentPrice > 0) {
+                updates.set(code, {
+                  currentPrice,
+                  changeRate: Number.isFinite(changeRate) ? changeRate : undefined,
+                });
+                applyUpdates();
               }
             }
           } catch (error) {
@@ -203,7 +189,6 @@ export default function HomePage() {
           }
         }
 
-        applyUpdates();
       } finally {
         refreshInFlight = false;
       }
